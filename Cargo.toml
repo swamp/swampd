@@ -1,0 +1,18 @@
+[package]
+name = "swampd"
+version = "0.0.1"
+edition = "2024"
+description = "Lightweight UDP‑based server embedding the Swamp scripting VM with built‑in key‑value storage"
+license = "MIT"
+repository = "https://github.com/swamp/swampd"
+keywords = ["swamp", "scripting", "udp", "server", "rpc"]
+categories = ["network-programming", "asynchronous"]
+
+[dependencies]
+
+swamp = "0.2.12"
+
+swamp-runtime = "0.2.12"
+swamp-std = "0.2.12"
+
+tracing = "0.1.41"
