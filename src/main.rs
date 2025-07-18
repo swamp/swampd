@@ -5,6 +5,7 @@ use std::{
     net::UdpSocket,
     time::{Duration, Instant},
 };
+use redis::{Connection, RedisError, TypedCommands};
 use swamp::prelude::{
     compile_codegen_and_create_vm_and_run_first_time, CodeGenOptions, CodeGenResult, CompileAndCodeGenOptions,
     CompileAndVmResult, CompileCodeGenVmResult, CompileOptions, DebugInfo, GenFunctionInfo,
@@ -28,6 +29,12 @@ impl From<io::Error> for Error {
 
 impl From<pico_args::Error> for Error {
     fn from(value: pico_args::Error) -> Self {
+        Self::Other(value.to_string())
+    }
+}
+
+impl From<RedisError> for Error {
+    fn from(value: RedisError) -> Self {
         Self::Other(value.to_string())
     }
 }
@@ -283,6 +290,15 @@ fn main() -> Result<(), Error> {
         print_usage();
         return Ok(());
     }
+
+    let client = redis::Client::open("redis://127.0.0.1/")?;
+
+    let mut con: Connection = client.get_connection()?;
+
+    // TODO: Remove this
+    con.set("foo", "bar")?;
+    let val: Option<String> = con.get("foo")?;
+    println!("foo = {:?}", val);
 
     let chdir: Option<PathBuf> = args.opt_value_from_str(["-C", "--chdir"])?;
     if let Some(dir) = chdir {
