@@ -1,6 +1,7 @@
-use std::path::Path;
+use pico_args::Arguments;
+use std::path::{Path, PathBuf};
 use std::{
-    io,
+    env, io,
     net::UdpSocket,
     time::{Duration, Instant},
 };
@@ -13,8 +14,6 @@ use swamp::prelude::{
 use swamp_runtime::CompileResult;
 use tracing::debug;
 
-const SWAMP_PORT: i32 = 50000;
-
 #[derive(Debug)]
 pub enum Error {
     Other(String),
@@ -24,6 +23,12 @@ pub enum Error {
 impl From<io::Error> for Error {
     fn from(value: io::Error) -> Self {
         Self::IoError(value)
+    }
+}
+
+impl From<pico_args::Error> for Error {
+    fn from(value: pico_args::Error) -> Self {
+        Self::Other(value.to_string())
     }
 }
 
@@ -38,7 +43,9 @@ struct SwampDaemonCallback {}
 
 impl HostFunctionCallback for SwampDaemonCallback {
     fn dispatch_host_call(&mut self, args: HostArgs) {
-        if args.function_id == 1 { swamp_std::print::print_fn(args) }
+        if args.function_id == 1 {
+            swamp_std::print::print_fn(args);
+        }
     }
 }
 
@@ -212,7 +219,7 @@ fn compile_and_create_vm() -> Result<CompileCodeGenVmResult, Error> {
         run_mode: RunMode::Deployed,
     };
 
-    let should_show_information = compile_and_codegen.compile_options.show_information;
+    //let should_show_information = compile_and_codegen.compile_options.show_information;
 
     let program = compile_codegen_and_create_vm_and_run_first_time(
         &scripts_root_dir,
@@ -222,8 +229,6 @@ fn compile_and_create_vm() -> Result<CompileCodeGenVmResult, Error> {
 
     if let Some(compile_and_vm_result) = program {
         if let CompileAndVmResult::CompileAndVm(all_result) = compile_and_vm_result {
-            
-
             Ok(all_result)
         } else {
             Err(Error::Other("couldn't compile".to_string()))
@@ -251,12 +256,58 @@ fn get_tick<'a>(script: &'a mut Script, lookup: SourceMapWrapper<'a>) -> &'a Gen
     )
 }
 
+const DEFAULT_PORT: u16 = 50000;
+const DEFAULT_DATA_DIR: &str = "./data";
+const DEFAULT_SCRIPTS_DIR: &str = "./scripts";
+
+fn print_usage() {
+    eprintln!(
+        "Usage: swampd [options]\n\n\
+         Options:\n\
+         \t-C, --chdir <DIR>          Change working directory before anything else\n\
+         \t-p, --port <PORT>           UDP port to bind (default: {DEFAULT_PORT})\n\
+         \t-d, --data-dir <DIR>        Path for sled storage (default: {DEFAULT_DATA_DIR})\n\
+         \t-s, --scripts-dir <DIR>     Path to Swamp scripts (default: {DEFAULT_SCRIPTS_DIR})\n\
+         \t-h, --help                  Print this help message"
+    );
+}
+
 fn main() -> Result<(), Error> {
     const VERSION: &str = env!("CARGO_PKG_VERSION");
 
     println!("swampd {VERSION} booting up");
-    
-    let socket = UdpSocket::bind(format!("0.0.0.0:{SWAMP_PORT}"))?;
+
+    let mut args = Arguments::from_env();
+
+    if args.contains(["-h", "--help"]) {
+        print_usage();
+        return Ok(());
+    }
+
+    let chdir: Option<PathBuf> = args.opt_value_from_str(["-C", "--chdir"])?;
+    if let Some(dir) = chdir {
+        env::set_current_dir(&dir)
+            .map_err(|e| Error::Other(format!("failed to chdir to {dir:?}: {e}")))?;
+    }
+
+    let port = args
+        .opt_value_from_str(["-p", "--port"])?
+        .unwrap_or(DEFAULT_PORT);
+    println!("start listening on {port}");
+
+    /*
+    let data_dir: PathBuf = args
+        .opt_value_from_str(["-d", "--data-dir"])?
+        .unwrap_or_else(|| DEFAULT_DATA_DIR.into());
+    let scripts_dir: PathBuf = args
+        .opt_value_from_str(["-s", "--scripts-dir"])?
+        .unwrap_or_else(|| DEFAULT_SCRIPTS_DIR.into());
+
+     */
+
+    let _ = args.finish();
+
+    let socket = UdpSocket::bind(format!("0.0.0.0:{port}"))?;
 
     socket.set_read_timeout(Some(Duration::from_secs(2)))?;
 
@@ -284,7 +335,7 @@ fn main() -> Result<(), Error> {
     );
     let wrapper = SourceMapWrapper {
         source_map: &source_map_clone,
-        current_dir: Default::default(),
+        current_dir: PathBuf::default(),
     };
 
     let tick_fn = get_tick(&mut script, wrapper).clone();
@@ -304,7 +355,7 @@ fn main() -> Result<(), Error> {
                     let mut host_callback = SwampDaemonCallback {};
                     let wrapper = SourceMapWrapper {
                         source_map: &source_map_clone,
-                        current_dir: Default::default(),
+                        current_dir: PathBuf::default(),
                     };
                     Script::execute_returns_unit(
                         &tick_fn,

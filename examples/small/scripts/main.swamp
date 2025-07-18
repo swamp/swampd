@@ -1,16 +1,21 @@
-struct Server {}
-
-impl Server {
-    #[host_call]
-    fn timer(mut self) {
-        print('timer called!')
-    }
+struct Server {
+    timer_calls: Int,
 }
 
-    #[host_call]
-fn main() -> Server {
-    print('server boot up')
-    Server {
+impl Server {
 
+    #[host_call]
+    fn timer(mut self) {
+        print('timer called! time:{self.timer_calls}')
+        self.timer_calls += 1
     }
+
+}
+
+#[host_call]
+fn main() -> Server {
+
+    print('server boot up')
+
+    Server {..}
 }

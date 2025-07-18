@@ -16,3 +16,4 @@ swamp-runtime = "0.2.12"
 swamp-std = "0.2.12"
 
 tracing = "0.1.41"
+pico-args = "0.5.0"
