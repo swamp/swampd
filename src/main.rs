@@ -1,17 +1,15 @@
+pub mod scan;
+use crate::scan::build_single_param_function_dispatch;
 use pico_args::Arguments;
+use redis::{Connection, RedisError, TypedCommands};
 use std::path::{Path, PathBuf};
 use std::{
     env, io,
     net::UdpSocket,
+    ptr,
     time::{Duration, Instant},
 };
-use redis::{Connection, RedisError, TypedCommands};
-use swamp::prelude::{
-    compile_codegen_and_create_vm_and_run_first_time, CodeGenOptions, CodeGenResult, CompileAndCodeGenOptions,
-    CompileAndVmResult, CompileCodeGenVmResult, CompileOptions, DebugInfo, GenFunctionInfo,
-    HeapMemoryAddress, HostArgs, HostFunctionCallback, InstructionRange, ModuleRef, Program, RunMode,
-    RunOptions, SourceMapWrapper, TypeRef, Vm, VmState,
-};
+use swamp::prelude::{compile_codegen_and_create_vm_and_run_first_time, CodeGenOptions, CodeGenResult, CompileAndCodeGenOptions, CompileAndVmResult, CompileCodeGenVmResult, CompileOptions, DebugInfo, GenFunctionInfo, HeapMemoryAddress, HeapMemoryRegion, HostArgs, HostFunctionCallback, InstructionRange, MemoryAlignment, MemorySize, ModuleRef, Program, RunMode, RunOptions, SourceMapWrapper, TypeRef, Vm, VmState};
 use swamp_runtime::CompileResult;
 use tracing::debug;
 
@@ -44,6 +42,7 @@ struct Script {
     pub vm: Vm,
     pub code_gen: CodeGenResult,
     pub main_module: ModuleRef,
+    simulation_value_region: HeapMemoryRegion,
 }
 
 struct SwampDaemonCallback {}
@@ -68,6 +67,7 @@ impl Script {
             vm,
             code_gen: codegen,
             main_module,
+            simulation_value_region: HeapMemoryRegion { addr: HeapMemoryAddress(0), size: MemorySize(0) },
         }
     }
 
@@ -254,6 +254,7 @@ fn get_tick<'a>(script: &'a mut Script, lookup: SourceMapWrapper<'a>) -> &'a Gen
 
     script.execute_create_func(&simulation_new_fn, &[simulation_value_region.addr], lookup);
 
+    script.simulation_value_region = simulation_value_region;
     script.get_impl_func(
         &simulation_new_fn
             .internal_function_definition
@@ -356,11 +357,77 @@ fn main() -> Result<(), Error> {
 
     let tick_fn = get_tick(&mut script, wrapper).clone();
 
+    let dispatch_map = build_single_param_function_dispatch(&script.code_gen, &tick_fn.params[0]);
+
+    let incoming_param_mem_region = script.vm.memory_mut().alloc_before_stack(&MemorySize(32768), &MemoryAlignment::U64);
+
     loop {
         match socket.recv_from(&mut buf) {
             Ok((len, peer)) => {
                 println!("-> {len} bytes from {peer}");
                 last_time = Instant::now();
+
+                if len < 8 {
+                    eprintln!("Packet too small: {} bytes (minimum 8 bytes required)", len);
+                    continue;
+                }
+
+                // Parse payload size (next 4 bytes, little-endian)
+                let payload_size = u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]);
+                let expected_total_size = payload_size as usize + 4; // payload + 2 u32s
+                if len != expected_total_size {
+                    eprintln!(
+                        "Invalid packet: declared payload size {} bytes, but packet is {} bytes total (expected {} bytes)",
+                        payload_size, len, expected_total_size
+                    );
+                    continue;
+                }
+
+                let universal_hash = u32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]);
+
+                println!(
+                    "Universal hash: 0x{:08x}, Payload size: {} bytes",
+                    universal_hash, payload_size
+                );
+
+                let hack_universal_hash = *dispatch_map.keys().next().unwrap();
+
+                if let Some(gen_func_info) = dispatch_map.get(&hack_universal_hash) {
+                    // The actual payload starts at byte 8
+                    let payload = &buf[8..len];
+
+                    // TODO: Process the payload based on universal_hash
+                    // For now, just print some info about the payload
+                    if !payload.is_empty() {
+                        println!(
+                            "Payload preview: {:02x?}...",
+                            &payload[..payload.len().min(16)]
+                        );
+                    }
+
+                    unsafe {
+                        ptr::copy_nonoverlapping(
+                            &payload[0],
+                            script.vm.memory_mut().get_heap_ptr(incoming_param_mem_region.addr.0 as usize),
+                            payload.len(),
+                        );
+                    }
+
+                    let mut host_callback = SwampDaemonCallback {};
+                    let wrapper = SourceMapWrapper {
+                        source_map: &source_map_clone,
+                        current_dir: PathBuf::default(),
+                    };
+
+                    Script::execute_returns_unit(
+                        gen_func_info,
+                        &[script.simulation_value_region.addr, incoming_param_mem_region.addr],
+                        &mut host_callback,
+                        &mut script.vm,
+                        &script.code_gen.debug_info,
+                        wrapper,
+                    );
+                }
             }
 
             Err(ref e)
@@ -375,7 +442,7 @@ fn main() -> Result<(), Error> {
                     };
                     Script::execute_returns_unit(
                         &tick_fn,
-                        &[],
+                        &[script.simulation_value_region.addr],
                         &mut host_callback,
                         &mut script.vm,
                         &script.code_gen.debug_info,

@@ -2,6 +2,10 @@ struct Server {
     timer_calls: Int,
 }
 
+struct Upload {
+	i: Int,
+}
+
 impl Server {
 
     #[host_call]
@@ -9,6 +13,11 @@ impl Server {
         print('timer called! time:{self.timer_calls}')
         self.timer_calls += 1
     }
+
+		#[host_call]
+		fn on_upload(mut self, upload: Upload) {
+			print('on upload {upload}')
+		}
 
 }
 

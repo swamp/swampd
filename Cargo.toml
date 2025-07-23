@@ -10,11 +10,11 @@ categories = ["network-programming", "asynchronous"]
 
 [dependencies]
 
-swamp = "0.2.12"
-
-swamp-runtime = "0.2.12"
-swamp-std = "0.2.12"
+swamp = { path = "../swamp/crates/swamp", version = "0.2.14" }
+swamp-runtime = {  path = "../swamp/crates/runtime", version = "0.2.14" }
+swamp-std = { path = "../swamp/crates/std", version = "0.2.14" }
 
 tracing = "0.1.41"
 pico-args = "0.5.0"
 redis = "0.32.4"
+seq-map = "0.0.14"
