@@ -216,7 +216,7 @@ fn compile_and_create_vm() -> Result<CompileCodeGenVmResult, Error> {
             show_types: false,
         },
         code_gen_options: CodeGenOptions {
-            show_disasm: false,
+            show_disasm: true,
             disasm_filter: None,
             show_debug: false,
             show_types: false,
@@ -251,6 +251,8 @@ fn get_tick<'a>(script: &'a mut Script, lookup: SourceMapWrapper<'a>) -> &'a Gen
         &simulation_new_fn.return_type.total_size,
         &simulation_new_fn.return_type.max_alignment,
     );
+
+    eprintln!("simulation addr:{}", simulation_value_region.addr);
 
     script.execute_create_func(&simulation_new_fn, &[simulation_value_region.addr], lookup);
 
@@ -361,6 +363,8 @@ fn main() -> Result<(), Error> {
 
     let incoming_param_mem_region = script.vm.memory_mut().alloc_before_stack(&MemorySize(32768), &MemoryAlignment::U64);
 
+    eprintln!("incoming_param_mem_region addr:{}", incoming_param_mem_region.addr);
+
     loop {
         match socket.recv_from(&mut buf) {
             Ok((len, peer)) => {
@@ -373,8 +377,8 @@ fn main() -> Result<(), Error> {
                 }
 
                 // Parse payload size (next 4 bytes, little-endian)
-                let payload_size = u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]);
-                let expected_total_size = payload_size as usize + 4; // payload + 2 u32s
+                let payload_size = u16::from_le_bytes([buf[0], buf[1]]);
+                let expected_total_size = payload_size as usize + 4;
                 if len != expected_total_size {
                     eprintln!(
                         "Invalid packet: declared payload size {} bytes, but packet is {} bytes total (expected {} bytes)",
@@ -383,18 +387,17 @@ fn main() -> Result<(), Error> {
                     continue;
                 }
 
-                let universal_hash = u32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]);
+                let universal_hash = u32::from_le_bytes([buf[2], buf[3], buf[4], buf[5]]);
 
                 println!(
                     "Universal hash: 0x{:08x}, Payload size: {} bytes",
                     universal_hash, payload_size
                 );
 
-                let hack_universal_hash = *dispatch_map.keys().next().unwrap();
 
-                if let Some(gen_func_info) = dispatch_map.get(&hack_universal_hash) {
+                if let Some(gen_func_info) = dispatch_map.get(&universal_hash) {
                     // The actual payload starts at byte 8
-                    let payload = &buf[8..len];
+                    let payload = &buf[6..len];
 
                     // TODO: Process the payload based on universal_hash
                     // For now, just print some info about the payload
@@ -405,10 +408,15 @@ fn main() -> Result<(), Error> {
                         );
                     }
 
+                    println!("Debug: incoming_param_mem_region.addr = {}, payload = {:?}",
+                        incoming_param_mem_region.addr, payload);
+
                     unsafe {
+                        let target_ptr = script.vm.memory_mut().get_heap_ptr(incoming_param_mem_region.addr.0 as usize);
+
                         ptr::copy_nonoverlapping(
-                            &payload[0],
-                            script.vm.memory_mut().get_heap_ptr(incoming_param_mem_region.addr.0 as usize),
+                            payload.as_ptr(),
+                            target_ptr,
                             payload.len(),
                         );
                     }
@@ -421,7 +429,7 @@ fn main() -> Result<(), Error> {
 
                     Script::execute_returns_unit(
                         gen_func_info,
-                        &[script.simulation_value_region.addr, incoming_param_mem_region.addr],
+                        &[HeapMemoryAddress(0), script.simulation_value_region.addr, incoming_param_mem_region.addr],
                         &mut host_callback,
                         &mut script.vm,
                         &script.code_gen.debug_info,
@@ -442,7 +450,7 @@ fn main() -> Result<(), Error> {
                     };
                     Script::execute_returns_unit(
                         &tick_fn,
-                        &[script.simulation_value_region.addr],
+                        &[HeapMemoryAddress(0), script.simulation_value_region.addr],
                         &mut host_callback,
                         &mut script.vm,
                         &script.code_gen.debug_info,
