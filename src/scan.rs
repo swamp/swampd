@@ -1,7 +1,7 @@
 use seq_map::SeqMap;
 use swamp::prelude::{BasicTypeRef, CodeGenResult, GenFunctionInfo};
 
-pub fn build_single_param_function_dispatch(
+#[must_use] pub fn build_single_param_function_dispatch(
     code_gen: &CodeGenResult,
     return_type: &BasicTypeRef,
 ) -> SeqMap<u32, GenFunctionInfo> {

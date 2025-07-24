@@ -9,7 +9,13 @@ use std::{
     ptr,
     time::{Duration, Instant},
 };
-use swamp::prelude::{compile_codegen_and_create_vm_and_run_first_time, CodeGenOptions, CodeGenResult, CompileAndCodeGenOptions, CompileAndVmResult, CompileCodeGenVmResult, CompileOptions, DebugInfo, GenFunctionInfo, HeapMemoryAddress, HeapMemoryRegion, HostArgs, HostFunctionCallback, InstructionRange, MemoryAlignment, MemorySize, ModuleRef, Program, RunMode, RunOptions, SourceMapWrapper, TypeRef, Vm, VmState};
+use swamp::prelude::{
+    CodeGenOptions, CodeGenResult, CompileAndCodeGenOptions, CompileAndVmResult,
+    CompileCodeGenVmResult, CompileOptions, DebugInfo, GenFunctionInfo, HeapMemoryAddress,
+    HeapMemoryRegion, HostArgs, HostFunctionCallback, InstructionRange, MemoryAlignment,
+    MemorySize, ModuleRef, Program, RunMode, RunOptions, SourceMapWrapper, TypeRef, Vm, VmState,
+    compile_codegen_and_create_vm_and_run_first_time,
+};
 use swamp_runtime::CompileResult;
 use tracing::debug;
 
@@ -67,7 +73,10 @@ impl Script {
             vm,
             code_gen: codegen,
             main_module,
-            simulation_value_region: HeapMemoryRegion { addr: HeapMemoryAddress(0), size: MemorySize(0) },
+            simulation_value_region: HeapMemoryRegion {
+                addr: HeapMemoryAddress(0),
+                size: MemorySize(0),
+            },
         }
     }
 
@@ -301,7 +310,7 @@ fn main() -> Result<(), Error> {
     // TODO: Remove this
     con.set("foo", "bar")?;
     let val: Option<String> = con.get("foo")?;
-    println!("foo = {:?}", val);
+    println!("foo = {val:?}");
 
     let chdir: Option<PathBuf> = args.opt_value_from_str(["-C", "--chdir"])?;
     if let Some(dir) = chdir {
@@ -361,9 +370,15 @@ fn main() -> Result<(), Error> {
 
     let dispatch_map = build_single_param_function_dispatch(&script.code_gen, &tick_fn.params[0]);
 
-    let incoming_param_mem_region = script.vm.memory_mut().alloc_before_stack(&MemorySize(32768), &MemoryAlignment::U64);
+    let incoming_param_mem_region = script
+        .vm
+        .memory_mut()
+        .alloc_before_stack(&MemorySize(32768), &MemoryAlignment::U64);
 
-    eprintln!("incoming_param_mem_region addr:{}", incoming_param_mem_region.addr);
+    eprintln!(
+        "incoming_param_mem_region addr:{}",
+        incoming_param_mem_region.addr
+    );
 
     loop {
         match socket.recv_from(&mut buf) {
@@ -372,69 +387,73 @@ fn main() -> Result<(), Error> {
                 last_time = Instant::now();
 
                 if len < 8 {
-                    eprintln!("Packet too small: {} bytes (minimum 8 bytes required)", len);
+                    eprintln!("Packet too small: {len} bytes (minimum 8 bytes required)");
                     continue;
                 }
 
-                // Parse payload size (next 4 bytes, little-endian)
-                let payload_size = u16::from_le_bytes([buf[0], buf[1]]);
-                let expected_total_size = payload_size as usize + 4;
-                if len != expected_total_size {
-                    eprintln!(
-                        "Invalid packet: declared payload size {} bytes, but packet is {} bytes total (expected {} bytes)",
-                        payload_size, len, expected_total_size
+                if let Some((header, payload)) = frag_datagram::read_datagram(&buf) {
+                    // Parse payload size (next 4 bytes, little-endian)
+                    let universal_hash =
+                        u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]);
+
+                    println!(
+                        "Universal hash: 0x{:08x}, Payload {} bytes",
+                        universal_hash,
+                        payload.len(),
                     );
-                    continue;
-                }
 
-                let universal_hash = u32::from_le_bytes([buf[2], buf[3], buf[4], buf[5]]);
+                    if let Some(gen_func_info) = dispatch_map.get(&universal_hash) {
+                        // The actual payload starts at byte 4
+                        let inner_payload = &payload[4..len];
 
-                println!(
-                    "Universal hash: 0x{:08x}, Payload size: {} bytes",
-                    universal_hash, payload_size
-                );
+                        // TODO: Process the payload based on universal_hash
+                        // For now, just print some info about the payload
+                        if !inner_payload.is_empty() {
+                            println!(
+                                "Payload preview: {:02x?}...",
+                                &payload[..payload.len().min(16)]
+                            );
+                        }
 
-
-                if let Some(gen_func_info) = dispatch_map.get(&universal_hash) {
-                    // The actual payload starts at byte 8
-                    let payload = &buf[6..len];
-
-                    // TODO: Process the payload based on universal_hash
-                    // For now, just print some info about the payload
-                    if !payload.is_empty() {
                         println!(
-                            "Payload preview: {:02x?}...",
-                            &payload[..payload.len().min(16)]
+                            "Debug: incoming_param_mem_region.addr = {}, payload = {:?}",
+                            incoming_param_mem_region.addr, inner_payload
+                        );
+
+                        unsafe {
+                            let target_ptr = script
+                                .vm
+                                .memory_mut()
+                                .get_heap_ptr(incoming_param_mem_region.addr.0 as usize);
+
+                            ptr::copy_nonoverlapping(
+                                inner_payload.as_ptr(),
+                                target_ptr,
+                                payload.len(),
+                            );
+                        }
+
+                        let mut host_callback = SwampDaemonCallback {};
+                        let wrapper = SourceMapWrapper {
+                            source_map: &source_map_clone,
+                            current_dir: PathBuf::default(),
+                        };
+
+                        Script::execute_returns_unit(
+                            gen_func_info,
+                            &[
+                                HeapMemoryAddress(0),
+                                script.simulation_value_region.addr,
+                                incoming_param_mem_region.addr,
+                            ],
+                            &mut host_callback,
+                            &mut script.vm,
+                            &script.code_gen.debug_info,
+                            wrapper,
                         );
                     }
-
-                    println!("Debug: incoming_param_mem_region.addr = {}, payload = {:?}",
-                        incoming_param_mem_region.addr, payload);
-
-                    unsafe {
-                        let target_ptr = script.vm.memory_mut().get_heap_ptr(incoming_param_mem_region.addr.0 as usize);
-
-                        ptr::copy_nonoverlapping(
-                            payload.as_ptr(),
-                            target_ptr,
-                            payload.len(),
-                        );
-                    }
-
-                    let mut host_callback = SwampDaemonCallback {};
-                    let wrapper = SourceMapWrapper {
-                        source_map: &source_map_clone,
-                        current_dir: PathBuf::default(),
-                    };
-
-                    Script::execute_returns_unit(
-                        gen_func_info,
-                        &[HeapMemoryAddress(0), script.simulation_value_region.addr, incoming_param_mem_region.addr],
-                        &mut host_callback,
-                        &mut script.vm,
-                        &script.code_gen.debug_info,
-                        wrapper,
-                    );
+                } else {
+                    eprintln!("invalid packet");
                 }
             }
 
