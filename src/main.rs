@@ -1,7 +1,7 @@
 pub mod scan;
 use crate::scan::build_single_param_function_dispatch;
 use pico_args::Arguments;
-use redis::{Connection, RedisError, TypedCommands};
+use redis::{Client, Connection, RedisError, TypedCommands};
 use std::path::{Path, PathBuf};
 use std::{
     env, io,
@@ -9,12 +9,13 @@ use std::{
     ptr,
     time::{Duration, Instant},
 };
+use source_map_cache::SourceMap;
 use swamp::prelude::{
-    CodeGenOptions, CodeGenResult, CompileAndCodeGenOptions, CompileAndVmResult,
-    CompileCodeGenVmResult, CompileOptions, DebugInfo, GenFunctionInfo, HeapMemoryAddress,
-    HeapMemoryRegion, HostArgs, HostFunctionCallback, InstructionRange, MemoryAlignment,
-    MemorySize, ModuleRef, Program, RunMode, RunOptions, SourceMapWrapper, TypeRef, Vm, VmState,
-    compile_codegen_and_create_vm_and_run_first_time,
+    compile_codegen_and_create_vm_and_run_first_time, create_default_source_map_from_scripts_dir, CodeGenOptions, CodeGenResult,
+    CompileAndCodeGenOptions, CompileAndVmResult, CompileCodeGenVmResult, CompileOptions, DebugInfo,
+    GenFunctionInfo, HeapMemoryAddress, HeapMemoryRegion, HostArgs, HostFunctionCallback,
+    InstructionRange, MemoryAlignment, MemorySize, ModuleRef, Program, RunMode, RunOptions, SourceMapWrapper, TypeRef,
+    Vm, VmState,
 };
 use swamp_runtime::CompileResult;
 use tracing::debug;
@@ -51,12 +52,23 @@ struct Script {
     simulation_value_region: HeapMemoryRegion,
 }
 
-struct SwampDaemonCallback {}
+struct SwampDaemonCallback<'a> {
+    client: &'a Client,
+}
 
-impl HostFunctionCallback for SwampDaemonCallback {
+impl<'a> SwampDaemonCallback<'a> {
+    pub fn db_set(&mut self, args: HostArgs) {
+        let key_string = args.string(1);
+        //        self.client.set(key_string, )
+    }
+}
+
+impl HostFunctionCallback for SwampDaemonCallback<'_> {
     fn dispatch_host_call(&mut self, args: HostArgs) {
-        if args.function_id == 1 {
-            swamp_std::print::print_fn(args);
+        match args.function_id {
+            1 => swamp_std::print::print_fn(args),
+            500 => self.db_set(args),
+            _ => panic!("unknown"),
         }
     }
 }
@@ -82,7 +94,7 @@ impl Script {
 
     pub fn get_func(&self, name: &str) -> &GenFunctionInfo {
         self.main_module
-            .symbol_table
+            .definition_table
             .get_internal_function(name)
             .map_or_else(
                 || {
@@ -116,12 +128,13 @@ impl Script {
 
     pub fn execute_create_func(
         &mut self,
+        client: &Client,
         func: &GenFunctionInfo,
         registers: &[HeapMemoryAddress],
         source_map_wrapper: SourceMapWrapper,
     ) {
         debug!(name=func.internal_function_definition.assigned_name, a=%registers[0], "executing create func");
-        let mut standard_callback = SwampDaemonCallback {};
+        let mut standard_callback = SwampDaemonCallback { client: &client };
 
         self.execute_create_func_with_callback(
             func,
@@ -186,7 +199,7 @@ impl Script {
             }
         }
 
-        vm.reset_stack_and_heap_to_constant_limit();
+        vm.reset_heap_allocator();
 
         run_function(vm, &func.ip_range, callback, &run_options);
 
@@ -200,7 +213,7 @@ pub fn run_function(
     host_function_callback: &mut dyn HostFunctionCallback,
     run_options: &RunOptions,
 ) {
-    vm.reset_stack_and_heap_to_constant_limit();
+    vm.reset_heap_allocator();
 
     vm.state = VmState::Normal;
 
@@ -211,8 +224,7 @@ pub fn run_function(
     }
 }
 
-fn compile_and_create_vm() -> Result<CompileCodeGenVmResult, Error> {
-    let scripts_root_dir = Path::new("scripts/").to_path_buf();
+fn compile_and_create_vm(source_map: &mut SourceMap) -> Result<CompileCodeGenVmResult, Error> {
     let scripts_crate_path = ["crate".to_string(), "main".to_string()];
     let compile_and_codegen = CompileAndCodeGenOptions {
         compile_options: CompileOptions {
@@ -237,8 +249,9 @@ fn compile_and_create_vm() -> Result<CompileCodeGenVmResult, Error> {
 
     //let should_show_information = compile_and_codegen.compile_options.show_information;
 
+
     let program = compile_codegen_and_create_vm_and_run_first_time(
-        &scripts_root_dir,
+        source_map,
         &scripts_crate_path,
         compile_and_codegen,
     );
@@ -254,7 +267,11 @@ fn compile_and_create_vm() -> Result<CompileCodeGenVmResult, Error> {
     }
 }
 
-fn get_tick<'a>(script: &'a mut Script, lookup: SourceMapWrapper<'a>) -> &'a GenFunctionInfo {
+fn get_tick<'a>(
+    script: &'a mut Script,
+    client: &Client,
+    lookup: SourceMapWrapper<'a>,
+) -> &'a GenFunctionInfo {
     let simulation_new_fn = script.get_func("main").clone();
     let simulation_value_region = script.vm.memory_mut().alloc_before_stack(
         &simulation_new_fn.return_type.total_size,
@@ -263,7 +280,12 @@ fn get_tick<'a>(script: &'a mut Script, lookup: SourceMapWrapper<'a>) -> &'a Gen
 
     eprintln!("simulation addr:{}", simulation_value_region.addr);
 
-    script.execute_create_func(&simulation_new_fn, &[simulation_value_region.addr], lookup);
+    script.execute_create_func(
+        client,
+        &simulation_new_fn,
+        &[simulation_value_region.addr],
+        lookup,
+    );
 
     script.simulation_value_region = simulation_value_region;
     script.get_impl_func(
@@ -302,15 +324,14 @@ fn main() -> Result<(), Error> {
         print_usage();
         return Ok(());
     }
+        let client = redis::Client::open("redis://127.0.0.1/")?;
 
-    let client = redis::Client::open("redis://127.0.0.1/")?;
+        let mut con: Connection = client.get_connection().inspect_err(|err| eprintln!("error: please start keydb. example: keydb-server /opt/homebrew/etc/keydb.conf"))?;
 
-    let mut con: Connection = client.get_connection()?;
-
-    // TODO: Remove this
-    con.set("foo", "bar")?;
-    let val: Option<String> = con.get("foo")?;
-    println!("foo = {val:?}");
+        // TODO: Remove this
+        con.set("foo", "bar")?;
+        let val: Option<String> = con.get("foo")?;
+        println!("foo = {val:?}");
 
     let chdir: Option<PathBuf> = args.opt_value_from_str(["-C", "--chdir"])?;
     if let Some(dir) = chdir {
@@ -342,7 +363,11 @@ fn main() -> Result<(), Error> {
     let mut buf = [0u8; 1500];
     let mut last_time = Instant::now();
 
-    let vm_result = compile_and_create_vm()?;
+    let scripts_root_dir = Path::new("scripts/").to_path_buf();
+    let mut source_map = create_default_source_map_from_scripts_dir(&scripts_root_dir)?;
+
+    let vm_result = compile_and_create_vm(&mut source_map)?;
+
     let crate_main_path = &["crate".to_string(), "main".to_string()];
 
     let main_module = vm_result
@@ -353,7 +378,6 @@ fn main() -> Result<(), Error> {
         .expect("could not find main module")
         .clone();
 
-    let source_map_clone = vm_result.codegen.source_map;
 
     let mut script = Script::new(
         main_module,
@@ -362,11 +386,11 @@ fn main() -> Result<(), Error> {
         vm_result.codegen.vm,
     );
     let wrapper = SourceMapWrapper {
-        source_map: &source_map_clone,
+        source_map: &source_map,
         current_dir: PathBuf::default(),
     };
 
-    let tick_fn = get_tick(&mut script, wrapper).clone();
+    let tick_fn = get_tick(&mut script, &client, wrapper).clone();
 
     let dispatch_map = build_single_param_function_dispatch(&script.code_gen, &tick_fn.params[0]);
 
@@ -433,9 +457,9 @@ fn main() -> Result<(), Error> {
                             );
                         }
 
-                        let mut host_callback = SwampDaemonCallback {};
+                        let mut host_callback = SwampDaemonCallback { client: &client };
                         let wrapper = SourceMapWrapper {
-                            source_map: &source_map_clone,
+                            source_map: &source_map,
                             current_dir: PathBuf::default(),
                         };
 
@@ -444,6 +468,7 @@ fn main() -> Result<(), Error> {
                             &[
                                 HeapMemoryAddress(0),
                                 script.simulation_value_region.addr,
+                                HeapMemoryAddress(0), // `Db` has no size
                                 incoming_param_mem_region.addr,
                             ],
                             &mut host_callback,
@@ -462,9 +487,9 @@ fn main() -> Result<(), Error> {
             {
                 let since = last_time.elapsed();
                 if since >= Duration::from_secs(2) {
-                    let mut host_callback = SwampDaemonCallback {};
+                    let mut host_callback = SwampDaemonCallback { client: &client };
                     let wrapper = SourceMapWrapper {
-                        source_map: &source_map_clone,
+                        source_map: &source_map,
                         current_dir: PathBuf::default(),
                     };
                     Script::execute_returns_unit(

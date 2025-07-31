@@ -557,12 +557,6 @@ checksum = "53c590392453030c0114e051a02cc7a222b63f329307eeed91f95e3a548bfe5a"
 
 [[package]]
 name = "seq-map"
-version = "0.0.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59fb3dae55e96c352048c88e6a2b9db15b25451ed4af54af3973d06371d40a6d"
-
-[[package]]
-name = "seq-map"
 version = "0.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c046d1718f921b431557f11234ced53a2bc502f7c09893fea1a9d975484c8414"
@@ -628,12 +622,12 @@ dependencies = [
 
 [[package]]
 name = "source-map-cache"
-version = "0.0.3"
+version = "0.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3d838bcae98de566078a73ea4fd6cf5c41a83845248dcd09b89f341f5d4bc0b"
+checksum = "1a5109c6861dbb5d70d611d4e8bac4a615ff4b40ee0e6a24265dc77a8de35172"
 dependencies = [
  "pathdiff",
- "seq-map 0.0.13",
+ "seq-map",
  "source-map-node",
 ]
 
@@ -663,7 +657,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "swamp"
-version = "0.2.16"
+version = "0.2.19"
 dependencies = [
  "source-map-cache",
  "source-map-node",
@@ -676,8 +670,10 @@ dependencies = [
  "swamp-modules",
  "swamp-parser",
  "swamp-program-analyzer",
+ "swamp-refs",
  "swamp-runtime",
  "swamp-semantic",
+ "swamp-symbol",
  "swamp-types",
  "swamp-vm",
  "swamp-vm-debug-info",
@@ -686,9 +682,9 @@ dependencies = [
 
 [[package]]
 name = "swamp-analyzer"
-version = "0.2.16"
+version = "0.2.19"
 dependencies = [
- "seq-map 0.0.13",
+ "seq-map",
  "seq-set",
  "source-map-cache",
  "source-map-node",
@@ -696,26 +692,27 @@ dependencies = [
  "swamp-attributes",
  "swamp-modules",
  "swamp-semantic",
+ "swamp-symbol",
  "swamp-types",
  "tracing",
 ]
 
 [[package]]
 name = "swamp-ast"
-version = "0.2.16"
+version = "0.2.19"
 
 [[package]]
 name = "swamp-attributes"
-version = "0.2.16"
+version = "0.2.19"
 dependencies = [
  "source-map-node",
 ]
 
 [[package]]
 name = "swamp-code-gen"
-version = "0.2.16"
+version = "0.2.19"
 dependencies = [
- "seq-map 0.0.13",
+ "seq-map",
  "source-map-cache",
  "source-map-node",
  "swamp-attributes",
@@ -732,7 +729,7 @@ dependencies = [
 
 [[package]]
 name = "swamp-code-gen-program"
-version = "0.2.16"
+version = "0.2.19"
 dependencies = [
  "source-map-cache",
  "swamp-code-gen",
@@ -744,11 +741,12 @@ dependencies = [
 
 [[package]]
 name = "swamp-compile"
-version = "0.2.16"
+version = "0.2.19"
 dependencies = [
  "regex",
- "seq-map 0.0.13",
+ "seq-map",
  "source-map-cache",
+ "source-map-node",
  "swamp-analyzer",
  "swamp-core",
  "swamp-dep-loader",
@@ -766,20 +764,22 @@ dependencies = [
 
 [[package]]
 name = "swamp-core"
-version = "0.2.16"
+version = "0.2.19"
 dependencies = [
+ "source-map-node",
  "swamp-modules",
  "swamp-semantic",
+ "swamp-symbol",
  "swamp-types",
  "tiny-ver",
 ]
 
 [[package]]
 name = "swamp-dep-loader"
-version = "0.2.16"
+version = "0.2.19"
 dependencies = [
  "dirs",
- "seq-map 0.0.13",
+ "seq-map",
  "source-map-cache",
  "swamp-ast",
  "swamp-parser",
@@ -789,7 +789,7 @@ dependencies = [
 
 [[package]]
 name = "swamp-error-report"
-version = "0.2.16"
+version = "0.2.19"
 dependencies = [
  "eira",
  "source-map-cache",
@@ -802,18 +802,20 @@ dependencies = [
 
 [[package]]
 name = "swamp-modules"
-version = "0.2.16"
+version = "0.2.19"
 dependencies = [
- "seq-map 0.0.13",
+ "seq-map",
  "source-map-node",
+ "swamp-refs",
  "swamp-semantic",
+ "swamp-symbol",
  "swamp-types",
  "tiny-ver",
 ]
 
 [[package]]
 name = "swamp-parser"
-version = "0.2.16"
+version = "0.2.19"
 dependencies = [
  "pest",
  "pest_derive",
@@ -823,9 +825,9 @@ dependencies = [
 
 [[package]]
 name = "swamp-pretty-print"
-version = "0.2.16"
+version = "0.2.19"
 dependencies = [
- "seq-map 0.0.13",
+ "seq-map",
  "source-map-cache",
  "source-map-node",
  "swamp-modules",
@@ -836,7 +838,7 @@ dependencies = [
 
 [[package]]
 name = "swamp-program-analyzer"
-version = "0.2.16"
+version = "0.2.19"
 dependencies = [
  "source-map-cache",
  "swamp-analyzer",
@@ -848,10 +850,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "swamp-runtime"
-version = "0.2.16"
+name = "swamp-refs"
+version = "0.2.19"
 dependencies = [
- "seq-map 0.0.13",
+ "seq-map",
+ "source-map-node",
+ "swamp-symbol",
+]
+
+[[package]]
+name = "swamp-runtime"
+version = "0.2.19"
+dependencies = [
+ "seq-map",
  "source-map-cache",
  "swamp-analyzer",
  "swamp-code-gen",
@@ -871,36 +882,47 @@ dependencies = [
 
 [[package]]
 name = "swamp-semantic"
-version = "0.2.16"
+version = "0.2.19"
 dependencies = [
  "fixed32",
- "seq-map 0.0.13",
+ "seq-map",
  "source-map-node",
  "swamp-attributes",
+ "swamp-refs",
+ "swamp-symbol",
  "swamp-types",
  "tracing",
 ]
 
 [[package]]
 name = "swamp-std"
-version = "0.2.16"
+version = "0.2.19"
 dependencies = [
  "swamp-vm",
  "swamp-vm-types",
 ]
 
 [[package]]
-name = "swamp-types"
-version = "0.2.16"
+name = "swamp-symbol"
+version = "0.2.19"
 dependencies = [
- "seq-fmt",
- "seq-map 0.0.13",
+ "seq-map",
  "source-map-node",
 ]
 
 [[package]]
+name = "swamp-types"
+version = "0.2.19"
+dependencies = [
+ "seq-fmt",
+ "seq-map",
+ "source-map-node",
+ "swamp-symbol",
+]
+
+[[package]]
 name = "swamp-vm"
-version = "0.2.16"
+version = "0.2.19"
 dependencies = [
  "fixed32",
  "hashmap-mem",
@@ -912,18 +934,18 @@ dependencies = [
 
 [[package]]
 name = "swamp-vm-debug-info"
-version = "0.2.16"
+version = "0.2.19"
 dependencies = [
- "seq-map 0.0.13",
+ "seq-map",
  "swamp-vm-types",
 ]
 
 [[package]]
 name = "swamp-vm-disasm"
-version = "0.2.16"
+version = "0.2.19"
 dependencies = [
  "fixed32",
- "seq-map 0.0.13",
+ "seq-map",
  "source-map-cache",
  "source-map-node",
  "swamp-vm-debug-info",
@@ -933,7 +955,7 @@ dependencies = [
 
 [[package]]
 name = "swamp-vm-instr-build"
-version = "0.2.16"
+version = "0.2.19"
 dependencies = [
  "source-map-node",
  "swamp-vm-types",
@@ -941,19 +963,20 @@ dependencies = [
 
 [[package]]
 name = "swamp-vm-layout"
-version = "0.2.16"
+version = "0.2.19"
 dependencies = [
  "hashmap-mem",
- "seq-map 0.0.13",
+ "seq-map",
  "source-map-node",
  "sparse-mem",
+ "swamp-symbol",
  "swamp-types",
  "swamp-vm-types",
 ]
 
 [[package]]
 name = "swamp-vm-types"
-version = "0.2.16"
+version = "0.2.19"
 dependencies = [
  "fxhash",
  "hashmap-mem",
@@ -972,7 +995,8 @@ dependencies = [
  "frag-datagram",
  "pico-args",
  "redis",
- "seq-map 0.0.14",
+ "seq-map",
+ "source-map-cache",
  "swamp",
  "swamp-runtime",
  "swamp-std",
