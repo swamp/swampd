@@ -1,7 +1,12 @@
 pub mod scan;
+use tracing_subscriber::{EnvFilter, Layer, Registry};
 use crate::scan::build_single_param_function_dispatch;
+use bytes::{BufMut, BytesMut};
+use frag_datagram::HeaderV2;
 use pico_args::Arguments;
 use redis::{Client, Connection, RedisError, TypedCommands};
+use source_map_cache::SourceMap;
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::path::{Path, PathBuf};
 use std::{
     env, io,
@@ -9,7 +14,6 @@ use std::{
     ptr,
     time::{Duration, Instant},
 };
-use source_map_cache::SourceMap;
 use swamp::prelude::{
     compile_codegen_and_create_vm_and_run_first_time, create_default_source_map_from_scripts_dir, CodeGenOptions, CodeGenResult,
     CompileAndCodeGenOptions, CompileAndVmResult, CompileCodeGenVmResult, CompileOptions, DebugInfo,
@@ -18,7 +22,10 @@ use swamp::prelude::{
     Vm, VmState,
 };
 use swamp_runtime::CompileResult;
-use tracing::debug;
+use swamp_vm::prelude::AnyValue;
+use tracing::{debug, info, trace};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 #[derive(Debug)]
 pub enum Error {
@@ -52,8 +59,34 @@ struct Script {
     simulation_value_region: HeapMemoryRegion,
 }
 
+pub struct UdpResponse<'a> {
+    pub udp_socket: &'a UdpSocket,
+    pub sock_addr: SocketAddr,
+}
+
+impl<'a> UdpResponse<'a> {
+    pub fn new(udp_socket: &'a UdpSocket) -> Self {
+        Self {
+            udp_socket,
+            sock_addr: SocketAddr::from(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 0)),
+        }
+    }
+}
+
+struct InitDaemonCallback {}
+
+impl HostFunctionCallback for InitDaemonCallback {
+    fn dispatch_host_call(&mut self, args: HostArgs) {
+        match args.function_id {
+            1 => swamp_std::print::print_fn(args),
+            _ => panic!("unknown"),
+        }
+    }
+}
+
 struct SwampDaemonCallback<'a> {
     client: &'a Client,
+    response: &'a UdpResponse<'a>,
 }
 
 impl<'a> SwampDaemonCallback<'a> {
@@ -63,10 +96,59 @@ impl<'a> SwampDaemonCallback<'a> {
     }
 }
 
+pub fn send_back(udp_response: &UdpResponse, any_value: AnyValue) {
+    let mut buf = BytesMut::with_capacity(2 + 4 + any_value.bytes.len());
+    buf.put_u32_le(any_value.type_hash);
+    buf.put_slice(&any_value.bytes);
+    let mut temp_buf: [u8; 1200] = [0u8; 1200];
+    let header = HeaderV2 {
+        version: frag_datagram::VERSION,
+        flags: 0,
+        connection_id: 0,
+        packet_counter: 0,
+        msg_id: 0,
+        frag_index: 0,
+        total_frag_count: 0,
+        sender_ts: 0,
+        echo_ts: 0,
+    };
+    let size = frag_datagram::write_datagram(&mut temp_buf, &header, &buf);
+    if let Some(octet_count) = size {
+        trace!(addr=%udp_response.sock_addr, octet_count, "sending back {:X}", any_value.type_hash);
+        udp_response
+            .udp_socket
+            .send_to(&temp_buf[0..octet_count], udp_response.sock_addr)
+            .unwrap();
+    }
+}
+
 impl HostFunctionCallback for SwampDaemonCallback<'_> {
     fn dispatch_host_call(&mut self, args: HostArgs) {
         match args.function_id {
             1 => swamp_std::print::print_fn(args),
+            10 => send_back(&self.response, args.any(2)),
+            500 => self.db_set(args),
+            _ => panic!("unknown"),
+        }
+    }
+}
+
+struct TimeoutDaemonCallback<'a> {
+    client: &'a Client,
+}
+
+impl<'a> TimeoutDaemonCallback<'a> {
+    pub fn db_set(&mut self, args: HostArgs) {
+        let key_string = args.string(1);
+        //        self.client.set(key_string, )
+    }
+}
+
+impl HostFunctionCallback for TimeoutDaemonCallback<'_> {
+    fn dispatch_host_call(&mut self, args: HostArgs) {
+        match args.function_id {
+            1 => swamp_std::print::print_fn(args),
+            10 => {}
             500 => self.db_set(args),
             _ => panic!("unknown"),
         }
@@ -128,13 +210,12 @@ impl Script {
 
     pub fn execute_create_func(
         &mut self,
-        client: &Client,
         func: &GenFunctionInfo,
         registers: &[HeapMemoryAddress],
         source_map_wrapper: SourceMapWrapper,
     ) {
         debug!(name=func.internal_function_definition.assigned_name, a=%registers[0], "executing create func");
-        let mut standard_callback = SwampDaemonCallback { client: &client };
+        let mut standard_callback = InitDaemonCallback {};
 
         self.execute_create_func_with_callback(
             func,
@@ -249,7 +330,6 @@ fn compile_and_create_vm(source_map: &mut SourceMap) -> Result<CompileCodeGenVmR
 
     //let should_show_information = compile_and_codegen.compile_options.show_information;
 
-
     let program = compile_codegen_and_create_vm_and_run_first_time(
         source_map,
         &scripts_crate_path,
@@ -280,12 +360,7 @@ fn get_tick<'a>(
 
     eprintln!("simulation addr:{}", simulation_value_region.addr);
 
-    script.execute_create_func(
-        client,
-        &simulation_new_fn,
-        &[simulation_value_region.addr],
-        lookup,
-    );
+    script.execute_create_func(&simulation_new_fn, &[simulation_value_region.addr], lookup);
 
     script.simulation_value_region = simulation_value_region;
     script.get_impl_func(
@@ -313,7 +388,18 @@ fn print_usage() {
     );
 }
 
+pub struct ScriptDatagrams {
+    pub handle: i32,
+}
+
 fn main() -> Result<(), Error> {
+
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .with_writer(std::io::stderr)
+        .with_ansi(true);
+    let filter_layer = EnvFilter::from_default_env();
+    Registry::default().with(filter_layer).with(fmt_layer).init();
+
     const VERSION: &str = env!("CARGO_PKG_VERSION");
 
     println!("swampd {VERSION} booting up");
@@ -324,14 +410,15 @@ fn main() -> Result<(), Error> {
         print_usage();
         return Ok(());
     }
-        let client = redis::Client::open("redis://127.0.0.1/")?;
+    let client = redis::Client::open("redis://127.0.0.1/")?;
 
-        let mut con: Connection = client.get_connection().inspect_err(|err| eprintln!("error: please start keydb. example: keydb-server /opt/homebrew/etc/keydb.conf"))?;
+    let mut con: Connection = client.get_connection().inspect_err(|err| {
+        eprintln!("error: please start keydb. example: keydb-server /opt/homebrew/etc/keydb.conf")
+    })?;
 
-        // TODO: Remove this
-        con.set("foo", "bar")?;
-        let val: Option<String> = con.get("foo")?;
-        println!("foo = {val:?}");
+    // TODO: Remove this
+    con.set("foo", "bar")?;
+    let val: Option<String> = con.get("foo")?;
 
     let chdir: Option<PathBuf> = args.opt_value_from_str(["-C", "--chdir"])?;
     if let Some(dir) = chdir {
@@ -342,7 +429,7 @@ fn main() -> Result<(), Error> {
     let port = args
         .opt_value_from_str(["-p", "--port"])?
         .unwrap_or(DEFAULT_PORT);
-    println!("start listening on {port}");
+    info!(port, "start listening");
 
     /*
     let data_dir: PathBuf = args
@@ -377,7 +464,6 @@ fn main() -> Result<(), Error> {
         .get(crate_main_path)
         .expect("could not find main module")
         .clone();
-
 
     let mut script = Script::new(
         main_module,
@@ -457,7 +543,13 @@ fn main() -> Result<(), Error> {
                             );
                         }
 
-                        let mut host_callback = SwampDaemonCallback { client: &client };
+                        let mut host_callback = SwampDaemonCallback {
+                            client: &client,
+                            response: &UdpResponse {
+                                udp_socket: &socket,
+                                sock_addr: SocketAddr::from(peer),
+                            },
+                        };
                         let wrapper = SourceMapWrapper {
                             source_map: &source_map,
                             current_dir: PathBuf::default(),
@@ -470,6 +562,7 @@ fn main() -> Result<(), Error> {
                                 script.simulation_value_region.addr,
                                 //HeapMemoryAddress(0), // `Db` has no size
                                 incoming_param_mem_region.addr,
+                                HeapMemoryAddress(0), // `Datagrams` has no size
                             ],
                             &mut host_callback,
                             &mut script.vm,
@@ -487,7 +580,7 @@ fn main() -> Result<(), Error> {
             {
                 let since = last_time.elapsed();
                 if since >= Duration::from_secs(2) {
-                    let mut host_callback = SwampDaemonCallback { client: &client };
+                    let mut host_callback = TimeoutDaemonCallback { client: &client };
                     let wrapper = SourceMapWrapper {
                         source_map: &source_map,
                         current_dir: PathBuf::default(),

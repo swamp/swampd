@@ -14,10 +14,14 @@ swamp = { path = "../swamp/crates/swamp", version = "0.2.14" }
 swamp-runtime = { path = "../swamp/crates/runtime", version = "0.2.14" }
 swamp-std = { path = "../swamp/crates/std", version = "0.2.14" }
 frag-datagram = { path = "../../piot/frag-datagram", version="0.0.1" }
+swamp-vm = { path = "../swamp/crates/vm", version = "0.2.19"}
 source-map-cache = "0.0.6"
 
-tracing = "0.1.41"
 pico-args = "0.5.0"
 redis = "0.32.4"
 seq-map = "0.0.14"
 bytemuck = { version = "1.23.1", features = ["derive"] }
+bytes = "1.10.1"
+
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["fmt", "env-filter"] }

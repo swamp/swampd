@@ -6,6 +6,17 @@ enum ToServer {
     Login Int,
 }
 
+enum ToClient {
+    Pong Int,
+}
+
+struct Datagrams {
+}
+
+impl Datagrams {
+    external 10 fn send(self, any: Any)
+}
+
 impl Server {
 
     #[host_call]
@@ -15,8 +26,9 @@ impl Server {
     }
 
     #[host_call]
-    fn on_msg(mut self, msg: ToServer) {
+    fn on_msg(mut self, msg: ToServer, conn: Datagrams) {
         print('on msg {msg} time:{self.timer_calls}')
+        conn.send(ToClient::Pong(42))
     }
 
 }

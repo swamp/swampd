@@ -8,7 +8,7 @@ use swamp::prelude::{BasicTypeRef, CodeGenResult, GenFunctionInfo};
     let mut function_map = SeqMap::new();
 
     for (_unique_id, gen_func) in &code_gen.functions {
-        if gen_func.params.len() == 2 {
+        if gen_func.params.len() == 3 {
             let first_param = &gen_func.params[0];
 
             if first_param.id.0 == return_type.id.0 {
