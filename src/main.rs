@@ -1,5 +1,4 @@
 pub mod scan;
-use tracing_subscriber::{EnvFilter, Layer, Registry};
 use crate::scan::build_single_param_function_dispatch;
 use bytes::{BufMut, BytesMut};
 use frag_datagram::HeaderV2;
@@ -26,6 +25,7 @@ use swamp_vm::prelude::AnyValue;
 use tracing::{debug, info, trace};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{EnvFilter, Layer, Registry};
 
 #[derive(Debug)]
 pub enum Error {
@@ -114,7 +114,7 @@ pub fn send_back(udp_response: &UdpResponse, any_value: AnyValue) {
     };
     let size = frag_datagram::write_datagram(&mut temp_buf, &header, &buf);
     if let Some(octet_count) = size {
-        trace!(addr=%udp_response.sock_addr, octet_count, "sending back {:X}", any_value.type_hash);
+        trace!(addr=%udp_response.sock_addr, octet_count,  payload_octet_count = any_value.bytes.len(), "sending back {:X}", any_value.type_hash);
         udp_response
             .udp_socket
             .send_to(&temp_buf[0..octet_count], udp_response.sock_addr)
@@ -393,12 +393,14 @@ pub struct ScriptDatagrams {
 }
 
 fn main() -> Result<(), Error> {
-
     let fmt_layer = tracing_subscriber::fmt::layer()
         .with_writer(std::io::stderr)
         .with_ansi(true);
     let filter_layer = EnvFilter::from_default_env();
-    Registry::default().with(filter_layer).with(fmt_layer).init();
+    Registry::default()
+        .with(filter_layer)
+        .with(fmt_layer)
+        .init();
 
     const VERSION: &str = env!("CARGO_PKG_VERSION");
 
