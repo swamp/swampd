@@ -2,8 +2,8 @@ struct Server {
     timer_calls: Int,
 }
 
-enum ToServerMessage {
-    Upload Int
+enum ToServer {
+    Login Int,
 }
 
 impl Server {
@@ -15,7 +15,7 @@ impl Server {
     }
 
     #[host_call]
-    fn on_msg(mut self, msg: ToServerMessage) {
+    fn on_msg(mut self, msg: ToServer) {
         print('on msg {msg} time:{self.timer_calls}')
     }
 

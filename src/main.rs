@@ -415,7 +415,7 @@ fn main() -> Result<(), Error> {
                     continue;
                 }
 
-                if let Some((header, payload)) = frag_datagram::read_datagram(&buf) {
+                if let Some((header, payload)) = frag_datagram::read_datagram(&buf[0..len]) {
                     // Parse payload size (next 4 bytes, little-endian)
                     let universal_hash =
                         u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]);
@@ -428,14 +428,14 @@ fn main() -> Result<(), Error> {
 
                     if let Some(gen_func_info) = dispatch_map.get(&universal_hash) {
                         // The actual payload starts at byte 4
-                        let inner_payload = &payload[4..len];
+                        let inner_payload = &payload[4..payload.len()];
 
                         // TODO: Process the payload based on universal_hash
                         // For now, just print some info about the payload
                         if !inner_payload.is_empty() {
                             println!(
-                                "Payload preview: {:02x?}...",
-                                &payload[..payload.len().min(16)]
+                                "inner Payload preview: {:02x?}...",
+                                &inner_payload[..inner_payload.len().min(16)]
                             );
                         }
 
@@ -468,7 +468,7 @@ fn main() -> Result<(), Error> {
                             &[
                                 HeapMemoryAddress(0),
                                 script.simulation_value_region.addr,
-                                HeapMemoryAddress(0), // `Db` has no size
+                                //HeapMemoryAddress(0), // `Db` has no size
                                 incoming_param_mem_region.addr,
                             ],
                             &mut host_callback,

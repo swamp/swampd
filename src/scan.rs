@@ -17,7 +17,7 @@ use swamp::prelude::{BasicTypeRef, CodeGenResult, GenFunctionInfo};
                 let universal_hash = second_param_type.universal_hash_u64() as u32;
 
                 println!(
-                    "Registering function 0x{:08x} '{}' with parameter type hash  (param type: {:?})",
+                    "Registering function 0x{:08x} '{}' with parameter type (param type: {:?})",
                     universal_hash,
                     gen_func.internal_function_definition.assigned_name,
                     second_param_type
