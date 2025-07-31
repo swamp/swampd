@@ -22,7 +22,7 @@ use swamp::prelude::{
 };
 use swamp_runtime::CompileResult;
 use swamp_vm::prelude::AnyValue;
-use tracing::{debug, info, trace};
+use tracing::{debug, info, trace, warn};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer, Registry};
@@ -495,7 +495,7 @@ fn main() -> Result<(), Error> {
     loop {
         match socket.recv_from(&mut buf) {
             Ok((len, peer)) => {
-                println!("-> {len} bytes from {peer}");
+                trace!(len, ?peer, "bytes received from peer");
                 last_time = Instant::now();
 
                 if len < 8 {
@@ -508,72 +508,68 @@ fn main() -> Result<(), Error> {
                     let universal_hash =
                         u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]);
 
-                    println!(
-                        "Universal hash: 0x{:08x}, Payload {} bytes",
-                        universal_hash,
-                        payload.len(),
-                    );
-
                     if let Some(gen_func_info) = dispatch_map.get(&universal_hash) {
                         // The actual payload starts at byte 4
                         let inner_payload = &payload[4..payload.len()];
 
-                        // TODO: Process the payload based on universal_hash
-                        // For now, just print some info about the payload
-                        if !inner_payload.is_empty() {
-                            println!(
-                                "inner Payload preview: {:02x?}...",
-                                &inner_payload[..inner_payload.len().min(16)]
+                        let expected_size = gen_func_info.params[1].total_size.0;
+
+                        if inner_payload.len() == expected_size as usize {
+                            unsafe {
+                                let target_ptr = script
+                                    .vm
+                                    .memory_mut()
+                                    .get_heap_ptr(incoming_param_mem_region.addr.0 as usize);
+
+                                ptr::copy_nonoverlapping(
+                                    inner_payload.as_ptr(),
+                                    target_ptr,
+                                    payload.len(),
+                                );
+                            }
+
+                            let mut host_callback = SwampDaemonCallback {
+                                client: &client,
+                                response: &UdpResponse {
+                                    udp_socket: &socket,
+                                    sock_addr: SocketAddr::from(peer),
+                                },
+                            };
+                            let wrapper = SourceMapWrapper {
+                                source_map: &source_map,
+                                current_dir: PathBuf::default(),
+                            };
+
+                            trace!(
+                                name = gen_func_info.internal_function_definition.assigned_name,
+                                "calling swamp function"
                             );
-                        }
-
-                        println!(
-                            "Debug: incoming_param_mem_region.addr = {}, payload = {:?}",
-                            incoming_param_mem_region.addr, inner_payload
-                        );
-
-                        unsafe {
-                            let target_ptr = script
-                                .vm
-                                .memory_mut()
-                                .get_heap_ptr(incoming_param_mem_region.addr.0 as usize);
-
-                            ptr::copy_nonoverlapping(
-                                inner_payload.as_ptr(),
-                                target_ptr,
-                                payload.len(),
+                            Script::execute_returns_unit(
+                                gen_func_info,
+                                &[
+                                    HeapMemoryAddress(0),
+                                    script.simulation_value_region.addr,
+                                    //HeapMemoryAddress(0), // `Db` has no size
+                                    incoming_param_mem_region.addr,
+                                    HeapMemoryAddress(0), // `Datagrams` has no size
+                                ],
+                                &mut host_callback,
+                                &mut script.vm,
+                                &script.code_gen.debug_info,
+                                wrapper,
                             );
+                        } else {
+                            warn!(
+                                expected_size,
+                                encountered_size = inner_payload.len(),
+                                "payload size is wrong for this type"
+                            )
                         }
-
-                        let mut host_callback = SwampDaemonCallback {
-                            client: &client,
-                            response: &UdpResponse {
-                                udp_socket: &socket,
-                                sock_addr: SocketAddr::from(peer),
-                            },
-                        };
-                        let wrapper = SourceMapWrapper {
-                            source_map: &source_map,
-                            current_dir: PathBuf::default(),
-                        };
-
-                        Script::execute_returns_unit(
-                            gen_func_info,
-                            &[
-                                HeapMemoryAddress(0),
-                                script.simulation_value_region.addr,
-                                //HeapMemoryAddress(0), // `Db` has no size
-                                incoming_param_mem_region.addr,
-                                HeapMemoryAddress(0), // `Datagrams` has no size
-                            ],
-                            &mut host_callback,
-                            &mut script.vm,
-                            &script.code_gen.debug_info,
-                            wrapper,
-                        );
+                    } else {
+                        warn!(universal_hash, "unknown universal type hash");
                     }
                 } else {
-                    eprintln!("invalid packet");
+                    warn!("unknown datagram");
                 }
             }
 
