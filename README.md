@@ -1,5 +1,7 @@
 # swampd
 
+> pronounced "Swamped"
+
 Early preview! swampd is an experimental daemon that embeds the Swamp scripting VM, exposes a
 minimal UDP interface, and provides a simple key–value storage layer. It’s in its infancy, so don’t
 expect a lot of bells and whistles - yet. In future releases, `swampd` will become a fully featured

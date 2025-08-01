@@ -25,3 +25,39 @@ bytes = "1.10.1"
 
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["fmt", "env-filter"] }
+
+[profile.dev]
+# (use all Cargo defaults)
+
+[profile.release]
+opt-level = 3           # full speed
+codegen-units = 1       # best cross-function optimization
+lto = "thin"            # inlining across crates, but reasonable compile times
+debug = false           # no debug info
+debug-assertions = false
+overflow-checks = true  # keep integer checks in case of bugs
+panic = "unwind"        # safer for libraries (or "abort" if you never catch panics)
+
+[profile.fast]
+inherits = "release"
+opt-level = 3
+codegen-units = 1
+lto = "fat"             # most aggressive; inlines absolutely everywhere
+overflow-checks = false
+panic = "abort"
+strip = "symbols"       # remove all symbols
+debug = false
+debug-assertions = false
+incremental = false
+
+[profile.min-size]
+inherits = "release"
+opt-level = "z"         # optimize for size
+codegen-units = 1
+lto = "thin"            # “fat” LTO often grows code size slightly
+overflow-checks = false
+panic = "abort"
+strip = "symbols"
+debug = false
+debug-assertions = false
+incremental = false

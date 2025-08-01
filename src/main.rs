@@ -105,7 +105,7 @@ pub fn send_back(udp_response: &UdpResponse, any_value: AnyValue) {
         version: frag_datagram::VERSION,
         flags: 0,
         connection_id: 0,
-        packet_counter: 0,
+        datagram_counter: 0,
         msg_id: 0,
         frag_index: 0,
         total_frag_count: 0,
