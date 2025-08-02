@@ -1,0 +1,63 @@
+[package]
+name = "swampd"
+version = "0.0.1"
+edition = "2024"
+description = "Lightweight UDP‑based server embedding the Swamp scripting VM with built‑in key‑value storage"
+license = "MIT"
+repository = "https://github.com/swamp/swampd"
+keywords = ["swamp", "scripting", "udp", "server", "rpc"]
+categories = ["network-programming", "asynchronous"]
+
+[dependencies]
+swamp = "0.2.21"
+swamp-runtime = "0.2.21"
+swamp-std = "0.2.21"
+swamp-vm = "0.2.21"
+swamp-compile = "0.2.21"
+#frag-datagram = { path = "../../piot/frag-datagram"}
+frag-datagram = "0.0.3"
+source-map-cache = "0.0.6"
+
+pico-args = "0.5.0"
+redis = "0.32.4"
+seq-map = "0.0.14"
+bytes = "1.10.1"
+
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+
+[profile.dev]
+# (use all Cargo defaults)
+
+[profile.release]
+opt-level = 3           # full speed
+codegen-units = 1       # best cross-function optimization
+lto = "thin"            # inlining across crates, but reasonable compile times
+debug = false           # no debug info
+debug-assertions = false
+overflow-checks = true  # keep integer checks in case of bugs
+panic = "unwind"        # safer for libraries (or "abort" if you never catch panics)
+
+[profile.fast]
+inherits = "release"
+opt-level = 3
+codegen-units = 1
+lto = "fat"             # most aggressive; inlines absolutely everywhere
+overflow-checks = false
+panic = "abort"
+strip = "symbols"       # remove all symbols
+debug = false
+debug-assertions = false
+incremental = false
+
+[profile.min-size]
+inherits = "release"
+opt-level = "z"         # optimize for size
+codegen-units = 1
+lto = "thin"            # “fat” LTO often grows code size slightly
+overflow-checks = false
+panic = "abort"
+strip = "symbols"
+debug = false
+debug-assertions = false
+incremental = false

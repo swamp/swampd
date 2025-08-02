@@ -1,0 +1,5 @@
+struct Db
+
+impl Db {
+    external 500 fn insert(name: String, any: Any)
+}
