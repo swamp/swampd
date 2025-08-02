@@ -9,23 +9,22 @@ keywords = ["swamp", "scripting", "udp", "server", "rpc"]
 categories = ["network-programming", "asynchronous"]
 
 [dependencies]
-
-swamp = "0.2.14"
-swamp-runtime = "0.2.14"
-swamp-std = "0.2.14"
-swamp-vm = "0.2.19"
-frag-datagram = "0.0.2"
-
+swamp = "0.2.21"
+swamp-runtime = "0.2.21"
+swamp-std = "0.2.21"
+swamp-vm = "0.2.21"
+swamp-compile = "0.2.21"
+#frag-datagram = { path = "../../piot/frag-datagram"}
+frag-datagram = "0.0.3"
 source-map-cache = "0.0.6"
 
 pico-args = "0.5.0"
 redis = "0.32.4"
 seq-map = "0.0.14"
-bytemuck = { version = "1.23.1", features = ["derive"] }
 bytes = "1.10.1"
 
-tracing = "0.1.41"
-tracing-subscriber = { version = "0.3.19", features = ["fmt", "env-filter"] }
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 
 [profile.dev]
 # (use all Cargo defaults)

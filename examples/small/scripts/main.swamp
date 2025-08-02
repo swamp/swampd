@@ -15,9 +15,19 @@ struct Datagrams {
 
 impl Datagrams {
     external 10 fn send(self, any: Any)
+    external 11 fn id(self) -> Int
 }
 
 impl Server {
+    #[host_call]
+    fn on_connected(mut self, conn: Datagrams) {
+        print('nice! someone connected {conn.id()}')
+    }
+
+    #[host_call]
+    fn on_disconnected(mut self, connection_id: Int) {
+        print('someone disconnected {connection_id}')
+    }
 
     #[host_call]
     fn timer(mut self) {

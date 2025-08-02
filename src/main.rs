@@ -1,7 +1,8 @@
 pub mod scan;
 use crate::scan::build_single_param_function_dispatch;
 use bytes::{BufMut, BytesMut};
-use frag_datagram::HeaderV2;
+use frag_datagram::server::address_hash;
+use frag_datagram::ServerHub;
 use pico_args::Arguments;
 use redis::{Client, Connection, RedisError, TypedCommands};
 use source_map_cache::SourceMap;
@@ -25,7 +26,22 @@ use swamp_vm::prelude::AnyValue;
 use tracing::{debug, info, trace, warn};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::{EnvFilter, Layer, Registry};
+use tracing_subscriber::{EnvFilter, Registry};
+
+#[derive(Debug)]
+pub enum RegisterValue {
+    HeapMemoryAddress(HeapMemoryAddress),
+    Scalar(u32),
+}
+
+impl RegisterValue {
+    pub fn raw(&self) -> u32 {
+        match self {
+            RegisterValue::HeapMemoryAddress(a) => a.0,
+            RegisterValue::Scalar(s) => *s,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum Error {
@@ -62,6 +78,7 @@ struct Script {
 pub struct UdpResponse<'a> {
     pub udp_socket: &'a UdpSocket,
     pub sock_addr: SocketAddr,
+    pub connection_id: u16,
 }
 
 impl<'a> UdpResponse<'a> {
@@ -69,6 +86,7 @@ impl<'a> UdpResponse<'a> {
         Self {
             udp_socket,
             sock_addr: SocketAddr::from(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 0)),
+            connection_id: 0,
         }
     }
 }
@@ -85,7 +103,7 @@ impl HostFunctionCallback for InitDaemonCallback {
 }
 
 struct SwampDaemonCallback<'a> {
-    client: &'a Client,
+    server_hub: &'a mut ServerHub,
     response: &'a UdpResponse<'a>,
 }
 
@@ -96,37 +114,30 @@ impl<'a> SwampDaemonCallback<'a> {
     }
 }
 
-pub fn send_back(udp_response: &UdpResponse, any_value: AnyValue) {
+pub fn send_back(server_hub: &mut ServerHub, udp_response: &UdpResponse, any_value: AnyValue) {
     let mut buf = BytesMut::with_capacity(2 + 4 + any_value.bytes.len());
     buf.put_u32_le(any_value.type_hash);
     buf.put_slice(&any_value.bytes);
-    let mut temp_buf: [u8; 1200] = [0u8; 1200];
-    let header = HeaderV2 {
-        version: frag_datagram::VERSION,
-        flags: 0,
-        connection_id: 0,
-        datagram_counter: 0,
-        msg_id: 0,
-        frag_index: 0,
-        total_frag_count: 0,
-        sender_ts: 0,
-        echo_ts: 0,
-    };
-    let size = frag_datagram::write_datagram(&mut temp_buf, &header, &buf);
-    if let Some(octet_count) = size {
-        trace!(addr=%udp_response.sock_addr, octet_count,  payload_octet_count = any_value.bytes.len(), "sending back {:X}", any_value.type_hash);
+
+    let datagrams = server_hub
+        .send_to(udp_response.connection_id, &buf)
+        .unwrap();
+
+    for datagram in datagrams {
+        //trace!(addr=%udp_response.sock_addr, octet_count,  payload_octet_count = any_value.bytes.len(), "sending back {:X}", any_value.type_hash);
         udp_response
             .udp_socket
-            .send_to(&temp_buf[0..octet_count], udp_response.sock_addr)
+            .send_to(&datagram, udp_response.sock_addr)
             .unwrap();
     }
 }
 
 impl HostFunctionCallback for SwampDaemonCallback<'_> {
-    fn dispatch_host_call(&mut self, args: HostArgs) {
+    fn dispatch_host_call(&mut self, mut args: HostArgs) {
         match args.function_id {
             1 => swamp_std::print::print_fn(args),
-            10 => send_back(&self.response, args.any(2)),
+            10 => send_back(&mut self.server_hub, &self.response, args.any(2)),
+            11 => args.set_register(0, self.response.connection_id as u32),
             500 => self.db_set(args),
             _ => panic!("unknown"),
         }
@@ -195,26 +206,28 @@ impl Script {
     }
 
     pub(crate) fn get_impl_func(&self, ty: &TypeRef, func_name: &str) -> &GenFunctionInfo {
-        let found_internal_def = self
+        if let Some(found_internal_def) = self
             .resolved_program
             .state
             .associated_impls
             .get_internal_member_function(ty, func_name)
-            .unwrap();
-
-        self.code_gen
-            .functions
-            .get(&found_internal_def.program_unique_id)
-            .unwrap()
+        {
+            self.code_gen
+                .functions
+                .get(&found_internal_def.program_unique_id)
+                .unwrap()
+        } else {
+            panic!("must have function {func_name} on type {ty}")
+        }
     }
 
     pub fn execute_create_func(
         &mut self,
         func: &GenFunctionInfo,
-        registers: &[HeapMemoryAddress],
+        registers: &[RegisterValue],
         source_map_wrapper: SourceMapWrapper,
     ) {
-        debug!(name=func.internal_function_definition.assigned_name, a=%registers[0], "executing create func");
+        debug!(name=func.internal_function_definition.assigned_name, a=?registers[0], "executing create func");
         let mut standard_callback = InitDaemonCallback {};
 
         self.execute_create_func_with_callback(
@@ -228,11 +241,11 @@ impl Script {
     pub fn execute_create_func_with_callback(
         &mut self,
         func: &GenFunctionInfo,
-        registers: &[HeapMemoryAddress],
+        registers: &[RegisterValue],
         host_callback: &mut dyn HostFunctionCallback,
         source_map_wrapper: SourceMapWrapper,
     ) {
-        debug!(name=func.internal_function_definition.assigned_name, a=%registers[0], "executing create func");
+        debug!(name=func.internal_function_definition.assigned_name, a=?registers[0], "executing create func with callback");
 
         Self::execute_returns_unit(
             func,
@@ -242,12 +255,12 @@ impl Script {
             &self.code_gen.debug_info,
             source_map_wrapper,
         );
-        debug!(name=func.internal_function_definition.assigned_name,  a=%registers[0], "creation done");
+        debug!(name=func.internal_function_definition.assigned_name,  a=?registers[0], "creation done");
     }
 
     pub fn execute_returns_unit(
         func: &GenFunctionInfo,
-        registers: &[HeapMemoryAddress],
+        registers: &[RegisterValue],
         callback: &mut dyn HostFunctionCallback,
         vm: &mut Vm,
         debug_info: &DebugInfo,
@@ -269,14 +282,16 @@ impl Script {
 
         for (index, register_value) in registers.iter().enumerate() {
             //assert!(self.simulation_value_addr < self.safe_stack_start_addr);
-            assert!(
-                register_value.0 == 0
-                    || register_value.0 >= vm.memory().constant_memory_size as u32
-            );
+            match register_value {
+                RegisterValue::HeapMemoryAddress(a) => {
+                    assert!(a.0 == 0 || a.0 >= vm.memory().constant_memory_size as u32);
+                }
+                _ => {}
+            }
             if index == 0 {
-                vm.set_return_register_address(register_value.0);
+                vm.set_return_register_address(register_value.raw());
             } else {
-                vm.set_register_pointer_addr_for_parameter(index as u8, register_value.0);
+                vm.set_register_pointer_addr_for_parameter(index as u8, register_value.raw());
             }
         }
 
@@ -313,12 +328,12 @@ fn compile_and_create_vm(source_map: &mut SourceMap) -> Result<CompileCodeGenVmR
             show_modules: false,
             show_errors: true,
             show_warnings: false,
-            show_hints: false,
+            show_hints: true,
             show_information: false,
             show_types: false,
         },
         code_gen_options: CodeGenOptions {
-            show_disasm: true,
+            show_disasm: false,
             disasm_filter: None,
             show_debug: false,
             show_types: false,
@@ -347,29 +362,32 @@ fn compile_and_create_vm(source_map: &mut SourceMap) -> Result<CompileCodeGenVmR
     }
 }
 
-fn get_tick<'a>(
-    script: &'a mut Script,
-    client: &Client,
-    lookup: SourceMapWrapper<'a>,
-) -> &'a GenFunctionInfo {
+fn create_script_server<'a>(script: &'a mut Script, lookup: SourceMapWrapper<'a>) -> TypeRef {
     let simulation_new_fn = script.get_func("main").clone();
     let simulation_value_region = script.vm.memory_mut().alloc_before_stack(
         &simulation_new_fn.return_type.total_size,
         &simulation_new_fn.return_type.max_alignment,
     );
 
-    eprintln!("simulation addr:{}", simulation_value_region.addr);
-
-    script.execute_create_func(&simulation_new_fn, &[simulation_value_region.addr], lookup);
+    script.execute_create_func(
+        &simulation_new_fn,
+        &[RegisterValue::HeapMemoryAddress(
+            simulation_value_region.addr,
+        )],
+        lookup,
+    );
 
     script.simulation_value_region = simulation_value_region;
-    script.get_impl_func(
-        &simulation_new_fn
-            .internal_function_definition
-            .signature
-            .return_type,
-        "timer",
-    )
+
+    simulation_new_fn
+        .internal_function_definition
+        .signature
+        .return_type
+        .clone()
+}
+
+fn do_get_tick<'a>(script: &'a mut Script, server_type: &TypeRef) -> &'a GenFunctionInfo {
+    script.get_impl_func(&server_type, "timer")
 }
 
 const DEFAULT_PORT: u16 = 50000;
@@ -380,11 +398,11 @@ fn print_usage() {
     eprintln!(
         "Usage: swampd [options]\n\n\
          Options:\n\
-         \t-C, --chdir <DIR>          Change working directory before anything else\n\
-         \t-p, --port <PORT>           UDP port to bind (default: {DEFAULT_PORT})\n\
-         \t-d, --data-dir <DIR>        Path for sled storage (default: {DEFAULT_DATA_DIR})\n\
-         \t-s, --scripts-dir <DIR>     Path to Swamp scripts (default: {DEFAULT_SCRIPTS_DIR})\n\
-         \t-h, --help                  Print this help message"
+         \t-C, --chdir <DIR>            Change working directory before anything else\n\
+         \t-s, --scripts-dir <DIR>      Path to Swamp scripts (default: {DEFAULT_SCRIPTS_DIR})\n\
+         \t-p, --port <PORT>            UDP port to bind (default: {DEFAULT_PORT})\n\
+         \t-d, --data-dir <DIR>         Path for keydb storage (default: {DEFAULT_DATA_DIR})\n\
+         \t-h, --help                   Print this help message"
     );
 }
 
@@ -418,7 +436,7 @@ fn main() -> Result<(), Error> {
         eprintln!("error: please start keydb. example: keydb-server /opt/homebrew/etc/keydb.conf")
     })?;
 
-    // TODO: Remove this
+    // TODO: Remove this redis test
     con.set("foo", "bar")?;
     let val: Option<String> = con.get("foo")?;
 
@@ -433,15 +451,13 @@ fn main() -> Result<(), Error> {
         .unwrap_or(DEFAULT_PORT);
     info!(port, "start listening");
 
-    /*
     let data_dir: PathBuf = args
         .opt_value_from_str(["-d", "--data-dir"])?
         .unwrap_or_else(|| DEFAULT_DATA_DIR.into());
+
     let scripts_dir: PathBuf = args
         .opt_value_from_str(["-s", "--scripts-dir"])?
         .unwrap_or_else(|| DEFAULT_SCRIPTS_DIR.into());
-
-     */
 
     let _ = args.finish();
 
@@ -452,8 +468,7 @@ fn main() -> Result<(), Error> {
     let mut buf = [0u8; 1500];
     let mut last_time = Instant::now();
 
-    let scripts_root_dir = Path::new("scripts/").to_path_buf();
-    let mut source_map = create_default_source_map_from_scripts_dir(&scripts_root_dir)?;
+    let mut source_map = swamp_compile::create_source_map(Path::new("packages"), &scripts_dir)?;
 
     let vm_result = compile_and_create_vm(&mut source_map)?;
 
@@ -478,7 +493,14 @@ fn main() -> Result<(), Error> {
         current_dir: PathBuf::default(),
     };
 
-    let tick_fn = get_tick(&mut script, &client, wrapper).clone();
+    let server_type = create_script_server(&mut script, wrapper);
+
+    let tick_fn = do_get_tick(&mut script, &server_type).clone();
+
+    let on_connected_fn = script.get_impl_func(&server_type, "on_connected").clone();
+    let on_disconnected_fn = script
+        .get_impl_func(&server_type, "on_disconnected")
+        .clone();
 
     let dispatch_map = build_single_param_function_dispatch(&script.code_gen, &tick_fn.params[0]);
 
@@ -487,15 +509,13 @@ fn main() -> Result<(), Error> {
         .memory_mut()
         .alloc_before_stack(&MemorySize(32768), &MemoryAlignment::U64);
 
-    eprintln!(
-        "incoming_param_mem_region addr:{}",
-        incoming_param_mem_region.addr
-    );
+    let mut receiver_hub = frag_datagram::ServerHub::new(10, 20, 2);
 
     loop {
         match socket.recv_from(&mut buf) {
             Ok((len, peer)) => {
                 trace!(len, ?peer, "bytes received from peer");
+
                 last_time = Instant::now();
 
                 if len < 8 {
@@ -503,7 +523,51 @@ fn main() -> Result<(), Error> {
                     continue;
                 }
 
-                if let Some((header, payload)) = frag_datagram::read_datagram(&buf[0..len]) {
+                let addr_hash = match peer {
+                    SocketAddr::V4(addr) => {
+                        address_hash::hash_ipv4((*addr.ip()).into(), addr.port())
+                    }
+                    SocketAddr::V6(addr) => {
+                        address_hash::hash_ipv6(addr.ip().octets(), addr.port())
+                    }
+                };
+                trace!(addr_hash, "calculated sock addr hash");
+
+                if let Some((connection_id, payload, responses, is_new_connection)) =
+                    receiver_hub.receive(&buf[0..len], addr_hash)
+                {
+                    let mut host_callback = SwampDaemonCallback {
+                        server_hub: &mut receiver_hub,
+                        response: &UdpResponse {
+                            udp_socket: &socket,
+                            sock_addr: SocketAddr::from(peer),
+                            connection_id,
+                        },
+                    };
+
+                    let wrapper = SourceMapWrapper {
+                        source_map: &source_map,
+                        current_dir: PathBuf::default(),
+                    };
+
+                    trace!(is_new_connection, "was it new");
+                    if is_new_connection {
+                        Script::execute_returns_unit(
+                            &on_connected_fn,
+                            &[
+                                RegisterValue::HeapMemoryAddress(HeapMemoryAddress(0)), // no return value
+                                RegisterValue::HeapMemoryAddress(
+                                    script.simulation_value_region.addr, // self
+                                ),
+                                RegisterValue::HeapMemoryAddress(HeapMemoryAddress(0)), // `Datagrams` has no size
+                            ],
+                            &mut host_callback,
+                            &mut script.vm,
+                            &script.code_gen.debug_info,
+                            wrapper,
+                        );
+                    }
+
                     // Parse payload size (next 4 bytes, little-endian)
                     let universal_hash =
                         u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]);
@@ -528,30 +592,27 @@ fn main() -> Result<(), Error> {
                                 );
                             }
 
-                            let mut host_callback = SwampDaemonCallback {
-                                client: &client,
-                                response: &UdpResponse {
-                                    udp_socket: &socket,
-                                    sock_addr: SocketAddr::from(peer),
-                                },
-                            };
+                            trace!(
+                                name = gen_func_info.internal_function_definition.assigned_name,
+                                "calling swamp function"
+                            );
+
                             let wrapper = SourceMapWrapper {
                                 source_map: &source_map,
                                 current_dir: PathBuf::default(),
                             };
 
-                            trace!(
-                                name = gen_func_info.internal_function_definition.assigned_name,
-                                "calling swamp function"
-                            );
                             Script::execute_returns_unit(
                                 gen_func_info,
                                 &[
-                                    HeapMemoryAddress(0),
-                                    script.simulation_value_region.addr,
-                                    //HeapMemoryAddress(0), // `Db` has no size
-                                    incoming_param_mem_region.addr,
-                                    HeapMemoryAddress(0), // `Datagrams` has no size
+                                    RegisterValue::HeapMemoryAddress(HeapMemoryAddress(0)), // no return
+                                    RegisterValue::HeapMemoryAddress(
+                                        script.simulation_value_region.addr, // self
+                                    ),
+                                    RegisterValue::HeapMemoryAddress(
+                                        incoming_param_mem_region.addr, // message
+                                    ),
+                                    RegisterValue::HeapMemoryAddress(HeapMemoryAddress(0)), // `Datagrams` has no size
                                 ],
                                 &mut host_callback,
                                 &mut script.vm,
@@ -583,9 +644,38 @@ fn main() -> Result<(), Error> {
                         source_map: &source_map,
                         current_dir: PathBuf::default(),
                     };
+
+                    let removed_connections = receiver_hub.cleanup_inactive_connections();
+                    if !removed_connections.is_empty() {
+                        for removed_connection in removed_connections {
+                            trace!(removed_connection, "remove connection");
+                            let wrapper = SourceMapWrapper {
+                                source_map: &source_map,
+                                current_dir: PathBuf::default(),
+                            };
+                            Script::execute_returns_unit(
+                                &on_disconnected_fn,
+                                &[
+                                    RegisterValue::HeapMemoryAddress(HeapMemoryAddress(0)), // no return value
+                                    RegisterValue::HeapMemoryAddress(
+                                        script.simulation_value_region.addr, // self
+                                    ),
+                                    RegisterValue::Scalar(removed_connection as u32), // connection id
+                                ],
+                                &mut host_callback,
+                                &mut script.vm,
+                                &script.code_gen.debug_info,
+                                wrapper,
+                            );
+                        }
+                    }
+
                     Script::execute_returns_unit(
                         &tick_fn,
-                        &[HeapMemoryAddress(0), script.simulation_value_region.addr],
+                        &[
+                            RegisterValue::HeapMemoryAddress(HeapMemoryAddress(0)), // no return value
+                            RegisterValue::HeapMemoryAddress(script.simulation_value_region.addr), // self
+                        ],
                         &mut host_callback,
                         &mut script.vm,
                         &script.code_gen.debug_info,
