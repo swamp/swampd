@@ -51,7 +51,7 @@ jobs:
           cargo test --color=always -- --nocapture --color=always
           cargo test --color=always -- --nocapture --color=always
 
-      - name: Package binaries into a single “swamp-<platform>-<arch>” archive
+      - name: Package binaries into a single “swampd-<platform>-<arch>” archive
         shell: bash
         run: |
           # Define the binaries we want to ship:
@@ -79,7 +79,7 @@ jobs:
           done
 
           # Now package all binary files into a single archive “swamp-<platform>-<arch>.*”
-          ARCHIVE_BASE="swamp-${{ matrix.platform }}-${{ matrix.arch }}"
+          ARCHIVE_BASE="swampd-${{ matrix.platform }}-${{ matrix.arch }}"
 
           cd dist
           if [ "${{ matrix.os }}" = "windows-latest" ]; then
