@@ -21,7 +21,7 @@ use std::{
 };
 use swamp::prelude::{
     compile_codegen_and_create_vm_and_run_first_time, BasicTypeKind, CodeGenOptions, CodeGenResult, CompileAndCodeGenOptions,
-    CompileAndVmResult, CompileCodeGenVmResult, CompileOptions, DebugInfo, GenFunctionInfo,
+    CompileAndVmResult, CompileCodeGenVmResult, CompileOptions, DebugInfo, Fp, GenFunctionInfo,
     HeapMemoryAddress, HeapMemoryRegion, HostArgs, HostFunctionCallback, InstructionRange,
     MemoryAlignment, MemorySize, ModuleRef, Program, RunMode, RunOptions, SourceMapWrapper, TypeCache, TypeRef,
     Vm, VmState,
@@ -120,26 +120,42 @@ impl<'a> DbApi<'a> {
         let struct_value = args.any(3);
         trace!(hash=?struct_value.type_hash, "struct has hash");
         let basic_type = self.type_cache.universal_short_id(struct_value.type_hash);
+
         if let BasicTypeKind::Struct(struct_type) = &basic_type.kind {
             let mut tuples = Vec::new();
             for field in &struct_type.fields {
                 let key = field.name.clone();
+                let start = field.offset.0 as usize;
+                let size = field.size.0 as usize;
+                trace!(key, start, size, "serializing");
+                let raw_bytes_for_value = &struct_value.bytes[start..start + size];
                 let value = match &field.ty.kind {
-                    BasicTypeKind::U8 => "u8",
-                    BasicTypeKind::B8 => "b8",
-                    BasicTypeKind::U16 => "u16",
-                    BasicTypeKind::S32 => "s32",
-                    BasicTypeKind::Fixed32 => "f32",
-                    BasicTypeKind::U32 => "u32",
-                    BasicTypeKind::StringView { .. } => "strview",
+                    BasicTypeKind::U8 => raw_bytes_for_value[0].to_string(),
+                    BasicTypeKind::B8 => raw_bytes_for_value[0].to_string(),
+                    BasicTypeKind::U16 => {
+                        let arr: [u8; 2] = raw_bytes_for_value.try_into().expect("wrong size");
+                        u16::from_le_bytes(arr).to_string()
+                    }
+                    BasicTypeKind::S32 => {
+                        let arr: [u8; 4] = raw_bytes_for_value.try_into().expect("wrong size");
+                        i32::from_le_bytes(arr).to_string()
+                    }
+                    BasicTypeKind::U32 => {
+                        let arr: [u8; 4] = raw_bytes_for_value.try_into().expect("wrong size");
+                        u32::from_le_bytes(arr).to_string()
+                    }
+                    BasicTypeKind::Fixed32 => {
+                        let arr: [u8; 4] = raw_bytes_for_value.try_into().expect("wrong size");
+                        let x = i32::from_le_bytes(arr);
+                        Fp::from_raw(x).to_string()
+                    }
+                    BasicTypeKind::StringView { .. } => "todo".to_string(),
                     _ => panic!("can not serialize"),
                 };
                 tuples.push((key, value));
             }
 
-            self.client
-                .hset_multiple(key_string, &tuples)
-                .unwrap()
+            self.client.hset_multiple(key_string, &tuples).unwrap()
         } else {
             panic!("was not struct. internal error");
         }
