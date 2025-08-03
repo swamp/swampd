@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::{
     env, io,
     net::UdpSocket,
-    ptr,
+    ptr, slice,
     time::{Duration, Instant},
 };
 use swamp::prelude::{
@@ -162,8 +162,72 @@ impl<'a> DbApi<'a> {
     }
 
     pub fn db_get(&mut self, args: HostArgs) {
-        let key_string = args.string(1);
-        //        self.client.set(key_string, )
+        let key_string = args.string(2);
+        let struct_value_mut = args.any_mut(3);
+        trace!(hash=?struct_value_mut.type_hash, "struct has hash");
+        let basic_type = self
+            .type_cache
+            .universal_short_id(struct_value_mut.type_hash);
+
+        if let BasicTypeKind::Struct(struct_type) = &basic_type.kind {
+            let hashmap = self.client.hgetall(key_string).unwrap();
+
+            for field in &struct_type.fields {
+                let key = field.name.clone();
+                let s = hashmap.get(key.as_str()).unwrap_or(&"".to_string()).clone();
+                let start = field.offset.0 as usize;
+                let size = field.size.0 as usize;
+                trace!(key, start, size, "deserializing");
+
+                let dst: &mut [u8] = unsafe {
+                    let p = struct_value_mut.data_ptr.add(start);
+                    slice::from_raw_parts_mut(p, size)
+                };
+
+                let value = match &field.ty.kind {
+                    BasicTypeKind::U8 => {
+                        let v = s
+                            .parse::<u8>()
+                            .expect(&format!("field {}: invalid u8", key));
+                        dst[0] = v;
+                    }
+                    BasicTypeKind::B8 => {
+                        let v = s
+                            .parse::<i8>()
+                            .expect(&format!("field {}: invalid i8", key));
+                        dst[0] = v as u8;
+                    }
+                    BasicTypeKind::U16 => {
+                        let v = s
+                            .parse::<u16>()
+                            .expect(&format!("field {}: invalid u16", key));
+                        dst.copy_from_slice(&v.to_le_bytes());
+                    }
+                    BasicTypeKind::S32 => {
+                        let v = s
+                            .parse::<i32>()
+                            .expect(&format!("field {}: invalid i32", key));
+                        dst.copy_from_slice(&v.to_le_bytes());
+                    }
+                    BasicTypeKind::U32 => {
+                        let v = s
+                            .parse::<u32>()
+                            .expect(&format!("field {}: invalid u32", key));
+                        dst.copy_from_slice(&v.to_le_bytes());
+                    }
+                    BasicTypeKind::Fixed32 => {
+                        let v = s
+                            .parse::<f32>()
+                            .expect(&format!("field {}: invalid f32", key));
+                        let converted = Fp::from(v);
+                        dst.copy_from_slice(&converted.inner().to_le_bytes());
+                    }
+                    _ => panic!("can not deserialize"),
+                };
+            }
+        } else {
+            panic!("was not struct. internal error");
+        }
     }
 }
 
