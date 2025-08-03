@@ -6,8 +6,8 @@
 pub mod scan;
 use crate::scan::build_single_param_function_dispatch;
 use bytes::{BufMut, BytesMut};
-use frag_datagram::ServerHub;
 use frag_datagram::server::address_hash;
+use frag_datagram::ServerHub;
 use pico_args::Arguments;
 use redis::{Client, Connection, RedisError, TypedCommands};
 use source_map_cache::SourceMap;
@@ -20,14 +20,15 @@ use std::{
     time::{Duration, Instant},
 };
 use swamp::prelude::{
-    CodeGenOptions, CodeGenResult, CompileAndCodeGenOptions, CompileAndVmResult,
-    CompileCodeGenVmResult, CompileOptions, DebugInfo, GenFunctionInfo, HeapMemoryAddress,
-    HeapMemoryRegion, HostArgs, HostFunctionCallback, InstructionRange, MemoryAlignment,
-    MemorySize, ModuleRef, Program, RunMode, RunOptions, SourceMapWrapper, TypeRef, Vm, VmState,
-    compile_codegen_and_create_vm_and_run_first_time, create_default_source_map_from_scripts_dir,
+    compile_codegen_and_create_vm_and_run_first_time, BasicTypeKind, CodeGenOptions, CodeGenResult, CompileAndCodeGenOptions,
+    CompileAndVmResult, CompileCodeGenVmResult, CompileOptions, DebugInfo, GenFunctionInfo,
+    HeapMemoryAddress, HeapMemoryRegion, HostArgs, HostFunctionCallback, InstructionRange,
+    MemoryAlignment, MemorySize, ModuleRef, Program, RunMode, RunOptions, SourceMapWrapper, TypeCache, TypeRef,
+    Vm, VmState,
 };
 use swamp_runtime::CompileResult;
 use swamp_vm::prelude::AnyValue;
+use swamp_vm_layout::LayoutCache;
 use tracing::{debug, info, trace, warn};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -107,15 +108,58 @@ impl HostFunctionCallback for InitDaemonCallback {
     }
 }
 
+struct DbApi<'a> {
+    pub type_cache: &'a LayoutCache,
+    pub client: &'a mut Client,
+}
+
+impl<'a> DbApi<'a> {
+    pub fn db_set(&mut self, args: HostArgs) {
+        // ignore self at 1
+        let key_string = args.string(2);
+        let struct_value = args.any(3);
+        trace!(hash=?struct_value.type_hash, "struct has hash");
+        let basic_type = self.type_cache.universal_short_id(struct_value.type_hash);
+        if let BasicTypeKind::Struct(struct_type) = &basic_type.kind {
+            let mut tuples = Vec::new();
+            for field in &struct_type.fields {
+                let key = field.name.clone();
+                let value = match &field.ty.kind {
+                    BasicTypeKind::U8 => "u8",
+                    BasicTypeKind::B8 => "b8",
+                    BasicTypeKind::U16 => "u16",
+                    BasicTypeKind::S32 => "s32",
+                    BasicTypeKind::Fixed32 => "f32",
+                    BasicTypeKind::U32 => "u32",
+                    BasicTypeKind::StringView { .. } => "strview",
+                    _ => panic!("can not serialize"),
+                };
+                tuples.push((key, value));
+            }
+
+            self.client
+                .hset_multiple(key_string, &tuples)
+                .unwrap()
+        } else {
+            panic!("was not struct. internal error");
+        }
+    }
+
+    pub fn db_get(&mut self, args: HostArgs) {
+        let key_string = args.string(1);
+        //        self.client.set(key_string, )
+    }
+}
+
 struct SwampDaemonCallback<'a> {
     server_hub: &'a mut ServerHub,
+    db_api: DbApi<'a>,
     response: &'a UdpResponse<'a>,
 }
 
 impl<'a> SwampDaemonCallback<'a> {
-    pub fn db_set(&mut self, args: HostArgs) {
-        let key_string = args.string(1);
-        //        self.client.set(key_string, )
+    pub(crate) fn db_new(&self, p0: HostArgs) {
+        // intentionally do nothing for now
     }
 }
 
@@ -143,29 +187,34 @@ impl HostFunctionCallback for SwampDaemonCallback<'_> {
             1 => swamp_std::print::print_fn(args),
             10 => send_back(&mut self.server_hub, &self.response, args.any(2)),
             11 => args.set_register(0, self.response.connection_id as u32),
-            500 => self.db_set(args),
+            50 => {
+                // true_random()
+                let mut data = [0u8; 4];
+                getrandom::fill(&mut data).unwrap();
+                let random_int = u32::from_le_bytes(data);
+                args.set_register(0, random_int)
+            }
+            500 => {} //self.db_api.db_new(args),
+            501 => self.db_api.db_set(args),
+            502 => self.db_api.db_get(args),
             _ => panic!("unknown"),
         }
     }
 }
 
 struct TimeoutDaemonCallback<'a> {
-    client: &'a Client,
+    db_api: DbApi<'a>,
 }
 
-impl<'a> TimeoutDaemonCallback<'a> {
-    pub fn db_set(&mut self, args: HostArgs) {
-        let key_string = args.string(1);
-        //        self.client.set(key_string, )
-    }
-}
+impl<'a> TimeoutDaemonCallback<'a> {}
 
 impl HostFunctionCallback for TimeoutDaemonCallback<'_> {
     fn dispatch_host_call(&mut self, args: HostArgs) {
         match args.function_id {
             1 => swamp_std::print::print_fn(args),
             10 => {}
-            500 => self.db_set(args),
+            501 => self.db_api.db_set(args),
+            502 => self.db_api.db_get(args),
             _ => panic!("unknown"),
         }
     }
@@ -435,7 +484,7 @@ fn main() -> Result<(), Error> {
         print_usage();
         return Ok(());
     }
-    let client = redis::Client::open("redis://127.0.0.1/")?;
+    let mut client = redis::Client::open("redis://127.0.0.1/")?;
 
     let mut con: Connection = client.get_connection().inspect_err(|err| {
         eprintln!("error: please start keydb. example: keydb-server /opt/homebrew/etc/keydb.conf")
@@ -543,6 +592,10 @@ fn main() -> Result<(), Error> {
                 {
                     let mut host_callback = SwampDaemonCallback {
                         server_hub: &mut receiver_hub,
+                        db_api: DbApi {
+                            client: &mut client,
+                            type_cache: &script.code_gen.layout_cache,
+                        },
                         response: &UdpResponse {
                             udp_socket: &socket,
                             sock_addr: SocketAddr::from(peer),
@@ -644,7 +697,12 @@ fn main() -> Result<(), Error> {
             {
                 let since = last_time.elapsed();
                 if since >= Duration::from_secs(2) {
-                    let mut host_callback = TimeoutDaemonCallback { client: &client };
+                    let mut host_callback = TimeoutDaemonCallback {
+                        db_api: DbApi {
+                            client: &mut client,
+                            type_cache: &script.code_gen.layout_cache,
+                        },
+                    };
                     let wrapper = SourceMapWrapper {
                         source_map: &source_map,
                         current_dir: PathBuf::default(),
