@@ -634,9 +634,12 @@ fn main() -> Result<(), Error> {
 
     let mut receiver_hub = frag_datagram::ServerHub::new(10, 20, 2);
 
+    /*
     for (index, basic_type) in &script.code_gen.layout_cache.universal_short_id_to_layout {
         info!(index, %basic_type, "types");
     }
+    
+     */
 
     loop {
         match socket.recv_from(&mut buf) {
@@ -658,7 +661,6 @@ fn main() -> Result<(), Error> {
                         address_hash::hash_ipv6(addr.ip().octets(), addr.port())
                     }
                 };
-                trace!(addr_hash, "calculated sock addr hash");
 
                 if let Some((connection_id, payload, responses, is_new_connection)) =
                     receiver_hub.receive(&buf[0..len], addr_hash)
@@ -681,7 +683,6 @@ fn main() -> Result<(), Error> {
                         current_dir: PathBuf::default(),
                     };
 
-                    trace!(is_new_connection, "was it new");
                     if is_new_connection {
                         Script::execute_returns_unit(
                             &on_connected_fn,
