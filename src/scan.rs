@@ -5,6 +5,7 @@
 
 use seq_map::SeqMap;
 use swamp::prelude::{BasicTypeRef, CodeGenResult, GenFunctionInfo};
+use tracing::{info, warn};
 
 #[must_use]
 pub fn build_single_param_function_dispatch(
@@ -14,9 +15,14 @@ pub fn build_single_param_function_dispatch(
     let mut function_map = SeqMap::new();
 
     for (_unique_id, gen_func) in &code_gen.functions {
-        if gen_func.params.len() == 3 {
+        if gen_func.params.len() >= 3 {
             let func_name = gen_func.internal_function_definition.assigned_name.clone();
-            if func_name == "string" || func_name == "short_string" {
+            if func_name == "string"
+                || func_name == "short_string"
+                || func_name == "pretty_string"
+                || func_name == "pretty_string_with_indent"
+                || func_name == "timer"
+            {
                 continue;
             }
             let first_param = &gen_func.params[0];
@@ -31,7 +37,20 @@ pub fn build_single_param_function_dispatch(
                 );
 
                 let _ = function_map.insert(universal_hash, gen_func.clone());
+            } 
+        } else {
+            /*
+            let func_name = gen_func.internal_function_definition.assigned_name.clone();
+            warn!(
+                func_name,
+                len = gen_func.params.len(),
+                "skipping wrong params"
+            );
+            for (index, x) in gen_func.params.iter().enumerate() {
+                info!(index, %x, "params" );
             }
+            
+             */
         }
     }
 

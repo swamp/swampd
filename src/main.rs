@@ -19,14 +19,10 @@ use std::{
     ptr, slice,
     time::{Duration, Instant},
 };
-use swamp::prelude::{
-    compile_codegen_and_create_vm_and_run_first_time, BasicTypeKind, CodeGenOptions, CodeGenResult, CompileAndCodeGenOptions,
-    CompileAndVmResult, CompileCodeGenVmResult, CompileOptions, DebugInfo, Fp, GenFunctionInfo,
-    HeapMemoryAddress, HeapMemoryRegion, HostArgs, HostFunctionCallback, InstructionRange,
-    MemoryAlignment, MemorySize, ModuleRef, Program, RunMode, RunOptions, SourceMapWrapper, TypeCache, TypeRef,
-    Vm, VmState,
-};
-use swamp_runtime::CompileResult;
+use std::fmt::Debug;
+use std::str::FromStr;
+use swamp::prelude::{compile_codegen_and_create_vm_and_run_first_time, BasicTypeKind, BasicTypeRef, CodeGenOptions, CodeGenResult, CompileAndCodeGenOptions, CompileAndVmResult, CompileCodeGenVmResult, CompileOptions, DebugInfo, Fp, GenFunctionInfo, HeapMemoryAddress, HeapMemoryRegion, HostArgs, HostFunctionCallback, InstructionRange, MemoryAlignment, MemorySize, ModuleRef, Program, RunMode, RunOptions, SourceMapWrapper, TypeCache, TypeRef, Vm, VmState};
+use swamp_runtime::{run_function_with_debug, CompileResult};
 use swamp_vm::prelude::AnyValue;
 use swamp_vm_layout::LayoutCache;
 use tracing::{debug, info, trace, warn};
@@ -97,6 +93,20 @@ impl<'a> UdpResponse<'a> {
     }
 }
 
+fn parse_or_warn<T>(maybe_str: Option<&str>, key: &str, kind: &str) -> T
+where
+    T: FromStr + Default,
+    T::Err: Debug,
+{
+    match maybe_str {
+        None => T::default(),
+        Some(s) => s.parse::<T>().unwrap_or_else(|e| {
+            warn!("field {} malformed ({}): {:?}; defaulting to 0", key, kind, e);
+            T::default()
+        }),
+    }
+}
+
 struct InitDaemonCallback {}
 
 impl HostFunctionCallback for InitDaemonCallback {
@@ -161,6 +171,8 @@ impl<'a> DbApi<'a> {
         }
     }
 
+
+
     pub fn db_get(&mut self, args: HostArgs) {
         let key_string = args.string(2);
         let struct_value_mut = args.any_mut(3);
@@ -174,7 +186,7 @@ impl<'a> DbApi<'a> {
 
             for field in &struct_type.fields {
                 let key = field.name.clone();
-                let s = hashmap.get(key.as_str()).unwrap_or(&"".to_string()).clone();
+                let s_opt: Option<&str> = hashmap.get(key.as_str()).map(String::as_str);
                 let start = field.offset.0 as usize;
                 let size = field.size.0 as usize;
                 trace!(key, start, size, "deserializing");
@@ -184,41 +196,29 @@ impl<'a> DbApi<'a> {
                     slice::from_raw_parts_mut(p, size)
                 };
 
-                let value = match &field.ty.kind {
+                match &field.ty.kind {
                     BasicTypeKind::U8 => {
-                        let v = s
-                            .parse::<u8>()
-                            .expect(&format!("field {}: invalid u8", key));
+                        let v: u8 = parse_or_warn(s_opt, &key, "u8");
                         dst[0] = v;
                     }
                     BasicTypeKind::B8 => {
-                        let v = s
-                            .parse::<i8>()
-                            .expect(&format!("field {}: invalid i8", key));
+                        let v: u8 = parse_or_warn(s_opt, &key, "u8");
                         dst[0] = v as u8;
                     }
                     BasicTypeKind::U16 => {
-                        let v = s
-                            .parse::<u16>()
-                            .expect(&format!("field {}: invalid u16", key));
+                        let v: u16 = parse_or_warn(s_opt, &key, "u16");
                         dst.copy_from_slice(&v.to_le_bytes());
                     }
                     BasicTypeKind::S32 => {
-                        let v = s
-                            .parse::<i32>()
-                            .expect(&format!("field {}: invalid i32", key));
+                        let v: i32 = parse_or_warn(s_opt, &key, "i32");
                         dst.copy_from_slice(&v.to_le_bytes());
                     }
                     BasicTypeKind::U32 => {
-                        let v = s
-                            .parse::<u32>()
-                            .expect(&format!("field {}: invalid u32", key));
+                        let v: u32 = parse_or_warn(s_opt, &key, "u32");
                         dst.copy_from_slice(&v.to_le_bytes());
                     }
                     BasicTypeKind::Fixed32 => {
-                        let v = s
-                            .parse::<f32>()
-                            .expect(&format!("field {}: invalid f32", key));
+                        let v: f32 = parse_or_warn(s_opt, &key, "f32");
                         let converted = Fp::from(v);
                         dst.copy_from_slice(&converted.inner().to_le_bytes());
                     }
@@ -237,12 +237,6 @@ struct SwampDaemonCallback<'a> {
     response: &'a UdpResponse<'a>,
 }
 
-impl<'a> SwampDaemonCallback<'a> {
-    pub(crate) fn db_new(&self, p0: HostArgs) {
-        // intentionally do nothing for now
-    }
-}
-
 pub fn send_back(server_hub: &mut ServerHub, udp_response: &UdpResponse, any_value: AnyValue) {
     let mut buf = BytesMut::with_capacity(2 + 4 + any_value.bytes.len());
     buf.put_u32_le(any_value.type_hash);
@@ -254,6 +248,7 @@ pub fn send_back(server_hub: &mut ServerHub, udp_response: &UdpResponse, any_val
 
     for datagram in datagrams {
         //trace!(addr=%udp_response.sock_addr, octet_count,  payload_octet_count = any_value.bytes.len(), "sending back {:X}", any_value.type_hash);
+        trace!(len=datagram.len(), ?udp_response.sock_addr, "bytes sent to peer (reply)");
         udp_response
             .udp_socket
             .send_to(&datagram, udp_response.sock_addr)
@@ -360,6 +355,7 @@ impl Script {
         func: &GenFunctionInfo,
         registers: &[RegisterValue],
         source_map_wrapper: SourceMapWrapper,
+        show_instructions: bool,
     ) {
         debug!(name=func.internal_function_definition.assigned_name, a=?registers[0], "executing create func");
         let mut standard_callback = InitDaemonCallback {};
@@ -369,6 +365,7 @@ impl Script {
             registers,
             &mut standard_callback,
             source_map_wrapper,
+            show_instructions,
         );
     }
 
@@ -378,6 +375,7 @@ impl Script {
         registers: &[RegisterValue],
         host_callback: &mut dyn HostFunctionCallback,
         source_map_wrapper: SourceMapWrapper,
+        show_instructions: bool,
     ) {
         debug!(name=func.internal_function_definition.assigned_name, a=?registers[0], "executing create func with callback");
 
@@ -388,6 +386,7 @@ impl Script {
             &mut self.vm,
             &self.code_gen.debug_info,
             source_map_wrapper,
+            show_instructions,
         );
         debug!(name=func.internal_function_definition.assigned_name,  a=?registers[0], "creation done");
     }
@@ -399,13 +398,14 @@ impl Script {
         vm: &mut Vm,
         debug_info: &DebugInfo,
         source_map_wrapper: SourceMapWrapper,
+        show_instructions: bool,
     ) {
         if vm.state != VmState::Normal {
             return;
         }
         let run_options = RunOptions {
-            debug_stats_enabled: false,
-            debug_opcodes_enabled: false,
+            debug_stats_enabled: show_instructions,
+            debug_opcodes_enabled: show_instructions,
             debug_operations_enabled: false,
             use_color: true,
             max_count: 0,
@@ -431,30 +431,13 @@ impl Script {
 
         vm.reset_heap_allocator();
 
-        run_function(vm, &func.ip_range, callback, &run_options);
+        run_function_with_debug(vm, &func.ip_range, callback, &run_options);
 
         //vm.state == VmState::Normal;
     }
 }
 
-pub fn run_function(
-    vm: &mut Vm,
-    ip_range: &InstructionRange,
-    host_function_callback: &mut dyn HostFunctionCallback,
-    run_options: &RunOptions,
-) {
-    vm.reset_heap_allocator();
-
-    vm.state = VmState::Normal;
-
-    vm.execute_from_ip(&ip_range.start, host_function_callback);
-
-    if matches!(vm.state, VmState::Trap(_) | VmState::Panic(_)) {
-        swamp_runtime::show_crash_info(vm, run_options.debug_info, &run_options.source_map_wrapper);
-    }
-}
-
-fn compile_and_create_vm(source_map: &mut SourceMap) -> Result<CompileCodeGenVmResult, Error> {
+fn compile_and_create_vm(source_map: &mut SourceMap,  show_assembly: bool) -> Result<CompileCodeGenVmResult, Error> {
     let scripts_crate_path = ["crate".to_string(), "main".to_string()];
     let compile_and_codegen = CompileAndCodeGenOptions {
         compile_options: CompileOptions {
@@ -467,7 +450,7 @@ fn compile_and_create_vm(source_map: &mut SourceMap) -> Result<CompileCodeGenVmR
             show_types: false,
         },
         code_gen_options: CodeGenOptions {
-            show_disasm: false,
+            show_disasm: show_assembly,
             disasm_filter: None,
             show_debug: false,
             show_types: false,
@@ -496,7 +479,7 @@ fn compile_and_create_vm(source_map: &mut SourceMap) -> Result<CompileCodeGenVmR
     }
 }
 
-fn create_script_server<'a>(script: &'a mut Script, lookup: SourceMapWrapper<'a>) -> TypeRef {
+fn create_script_server<'a>(script: &'a mut Script, lookup: SourceMapWrapper<'a>, show_instructions: bool) -> (TypeRef, BasicTypeRef) {
     let simulation_new_fn = script.get_func("main").clone();
     let simulation_value_region = script.vm.memory_mut().alloc_before_stack(
         &simulation_new_fn.return_type.total_size,
@@ -509,15 +492,16 @@ fn create_script_server<'a>(script: &'a mut Script, lookup: SourceMapWrapper<'a>
             simulation_value_region.addr,
         )],
         lookup,
+        show_instructions,
     );
 
     script.simulation_value_region = simulation_value_region;
 
-    simulation_new_fn
+    (simulation_new_fn
         .internal_function_definition
         .signature
         .return_type
-        .clone()
+        .clone(), simulation_new_fn.return_type.clone())
 }
 
 fn do_get_tick<'a>(script: &'a mut Script, server_type: &TypeRef) -> &'a GenFunctionInfo {
@@ -593,6 +577,10 @@ fn main() -> Result<(), Error> {
         .opt_value_from_str(["-s", "--scripts-dir"])?
         .unwrap_or_else(|| DEFAULT_SCRIPTS_DIR.into());
 
+    let show_assembly = args.contains(["-a", "--show-assembly"]);
+    let show_instructions = args.contains(["-i", "--show-instructions"]);
+
+
     let _ = args.finish();
 
     let socket = UdpSocket::bind(format!("0.0.0.0:{port}"))?;
@@ -604,7 +592,7 @@ fn main() -> Result<(), Error> {
 
     let mut source_map = swamp_compile::create_source_map(Path::new("packages"), &scripts_dir)?;
 
-    let vm_result = compile_and_create_vm(&mut source_map)?;
+    let vm_result = compile_and_create_vm(&mut source_map, show_assembly)?;
 
     let crate_main_path = &["crate".to_string(), "main".to_string()];
 
@@ -627,7 +615,8 @@ fn main() -> Result<(), Error> {
         current_dir: PathBuf::default(),
     };
 
-    let server_type = create_script_server(&mut script, wrapper);
+    let (server_type, server_basic_type) = create_script_server(&mut script, wrapper, show_instructions);
+    info!(%server_type, %server_basic_type, "server types");
 
     let tick_fn = do_get_tick(&mut script, &server_type).clone();
 
@@ -636,7 +625,7 @@ fn main() -> Result<(), Error> {
         .get_impl_func(&server_type, "on_disconnected")
         .clone();
 
-    let dispatch_map = build_single_param_function_dispatch(&script.code_gen, &tick_fn.params[0]);
+    let dispatch_map = build_single_param_function_dispatch(&script.code_gen, &server_basic_type);
 
     let incoming_param_mem_region = script
         .vm
@@ -644,6 +633,10 @@ fn main() -> Result<(), Error> {
         .alloc_before_stack(&MemorySize(32768), &MemoryAlignment::U64);
 
     let mut receiver_hub = frag_datagram::ServerHub::new(10, 20, 2);
+
+    for (index, basic_type) in &script.code_gen.layout_cache.universal_short_id_to_layout {
+        info!(index, %basic_type, "types");
+    }
 
     loop {
         match socket.recv_from(&mut buf) {
@@ -703,6 +696,7 @@ fn main() -> Result<(), Error> {
                             &mut script.vm,
                             &script.code_gen.debug_info,
                             wrapper,
+                            show_instructions,
                         );
                     }
 
@@ -756,6 +750,7 @@ fn main() -> Result<(), Error> {
                                 &mut script.vm,
                                 &script.code_gen.debug_info,
                                 wrapper,
+                                show_instructions,
                             );
                         } else {
                             warn!(
@@ -809,6 +804,7 @@ fn main() -> Result<(), Error> {
                                 &mut script.vm,
                                 &script.code_gen.debug_info,
                                 wrapper,
+                                show_instructions
                             );
                         }
                     }
@@ -823,6 +819,7 @@ fn main() -> Result<(), Error> {
                         &mut script.vm,
                         &script.code_gen.debug_info,
                         wrapper,
+                        show_instructions,
                     );
                     last_time = Instant::now();
                 }

@@ -15,10 +15,10 @@ categories = ["network-programming", "asynchronous"]
 #swamp-vm = "0.2.21"
 #swamp-compile = "0.2.21"
 
-swamp = { path = "../swamp/crates/swamp" }
-swamp-runtime =  { path = "../swamp/crates/runtime" }
+swamp = { path = "../swamp/crates/swamp", features = ["debug_vm"] }
+swamp-runtime =  { path = "../swamp/crates/runtime" , features = ["debug_vm"]}
 swamp-std =  { path = "../swamp/crates/std" }
-swamp-vm =  { path = "../swamp/crates/vm" }
+swamp-vm =  { path = "../swamp/crates/vm", features = ["debug_vm"] }
 swamp-compile =  { path = "../swamp/crates/compile" }
 swamp-vm-layout =  { path = "../swamp/crates/vm-layout" }
 
