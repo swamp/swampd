@@ -173,9 +173,9 @@ dependencies = [
 
 [[package]]
 name = "frag-datagram"
-version = "0.0.3"
+version = "0.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d75d8287bb03cc468bc7968c2e64ba38cd3bbb254fe5723a54446304762c3b88"
+checksum = "b37f7197da892dff4db53821068f7301edf21d1e9f479136b2610dd77dcc7565"
 dependencies = [
  "bytemuck",
  "getrandom 0.3.3",

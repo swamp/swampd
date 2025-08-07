@@ -5,7 +5,6 @@
 
 use seq_map::SeqMap;
 use swamp::prelude::{BasicTypeRef, CodeGenResult, GenFunctionInfo};
-use tracing::{info, warn};
 
 #[must_use]
 pub fn build_single_param_function_dispatch(
@@ -37,7 +36,7 @@ pub fn build_single_param_function_dispatch(
                 );
 
                 let _ = function_map.insert(universal_hash, gen_func.clone());
-            } 
+            }
         } else {
             /*
             let func_name = gen_func.internal_function_definition.assigned_name.clone();
@@ -49,7 +48,7 @@ pub fn build_single_param_function_dispatch(
             for (index, x) in gen_func.params.iter().enumerate() {
                 info!(index, %x, "params" );
             }
-            
+
              */
         }
     }

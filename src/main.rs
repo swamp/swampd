@@ -6,23 +6,29 @@
 pub mod scan;
 use crate::scan::build_single_param_function_dispatch;
 use bytes::{BufMut, BytesMut};
-use frag_datagram::server::address_hash;
 use frag_datagram::ServerHub;
+use frag_datagram::server::address_hash;
 use pico_args::Arguments;
-use redis::{Client, Connection, RedisError, TypedCommands};
+use redis::{Client, RedisError, TypedCommands};
 use source_map_cache::SourceMap;
+use std::fmt::Debug;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::{
     env, io,
     net::UdpSocket,
     ptr, slice,
     time::{Duration, Instant},
 };
-use std::fmt::Debug;
-use std::str::FromStr;
-use swamp::prelude::{compile_codegen_and_create_vm_and_run_first_time, BasicTypeKind, BasicTypeRef, CodeGenOptions, CodeGenResult, CompileAndCodeGenOptions, CompileAndVmResult, CompileCodeGenVmResult, CompileOptions, DebugInfo, Fp, GenFunctionInfo, HeapMemoryAddress, HeapMemoryRegion, HostArgs, HostFunctionCallback, InstructionRange, MemoryAlignment, MemorySize, ModuleRef, Program, RunMode, RunOptions, SourceMapWrapper, TypeCache, TypeRef, Vm, VmState};
-use swamp_runtime::{run_function_with_debug, CompileResult};
+use swamp::prelude::{
+    BasicTypeKind, BasicTypeRef, CodeGenOptions, CodeGenResult, CompileAndCodeGenOptions,
+    CompileAndVmResult, CompileCodeGenVmResult, CompileOptions, DebugInfo, Fp, GenFunctionInfo,
+    HeapMemoryAddress, HeapMemoryRegion, HostArgs, HostFunctionCallback, MemoryAlignment,
+    MemorySize, ModuleRef, Program, RunMode, RunOptions, SourceMapWrapper, TypeRef, Vm, VmState,
+    compile_codegen_and_create_vm_and_run_first_time,
+};
+use swamp_runtime::{CompileResult, run_function_with_debug};
 use swamp_vm::prelude::AnyValue;
 use swamp_vm_layout::LayoutCache;
 use tracing::{debug, info, trace, warn};
@@ -101,7 +107,10 @@ where
     match maybe_str {
         None => T::default(),
         Some(s) => s.parse::<T>().unwrap_or_else(|e| {
-            warn!("field {} malformed ({}): {:?}; defaulting to 0", key, kind, e);
+            warn!(
+                "field {} malformed ({}): {:?}; defaulting to 0",
+                key, kind, e
+            );
             T::default()
         }),
     }
@@ -170,8 +179,6 @@ impl<'a> DbApi<'a> {
             panic!("was not struct. internal error");
         }
     }
-
-
 
     pub fn db_get(&mut self, args: HostArgs) {
         let key_string = args.string(2);
@@ -437,7 +444,10 @@ impl Script {
     }
 }
 
-fn compile_and_create_vm(source_map: &mut SourceMap,  show_assembly: bool) -> Result<CompileCodeGenVmResult, Error> {
+fn compile_and_create_vm(
+    source_map: &mut SourceMap,
+    show_assembly: bool,
+) -> Result<CompileCodeGenVmResult, Error> {
     let scripts_crate_path = ["crate".to_string(), "main".to_string()];
     let compile_and_codegen = CompileAndCodeGenOptions {
         compile_options: CompileOptions {
@@ -479,7 +489,11 @@ fn compile_and_create_vm(source_map: &mut SourceMap,  show_assembly: bool) -> Re
     }
 }
 
-fn create_script_server<'a>(script: &'a mut Script, lookup: SourceMapWrapper<'a>, show_instructions: bool) -> (TypeRef, BasicTypeRef) {
+fn create_script_server<'a>(
+    script: &'a mut Script,
+    lookup: SourceMapWrapper<'a>,
+    show_instructions: bool,
+) -> (TypeRef, BasicTypeRef) {
     let simulation_new_fn = script.get_func("main").clone();
     let simulation_value_region = script.vm.memory_mut().alloc_before_stack(
         &simulation_new_fn.return_type.total_size,
@@ -497,11 +511,14 @@ fn create_script_server<'a>(script: &'a mut Script, lookup: SourceMapWrapper<'a>
 
     script.simulation_value_region = simulation_value_region;
 
-    (simulation_new_fn
-        .internal_function_definition
-        .signature
-        .return_type
-        .clone(), simulation_new_fn.return_type.clone())
+    (
+        simulation_new_fn
+            .internal_function_definition
+            .signature
+            .return_type
+            .clone(),
+        simulation_new_fn.return_type.clone(),
+    )
 }
 
 fn do_get_tick<'a>(script: &'a mut Script, server_type: &TypeRef) -> &'a GenFunctionInfo {
@@ -549,7 +566,16 @@ fn main() -> Result<(), Error> {
         return Ok(());
     }
     let mut client = redis::Client::open("redis://127.0.0.1/")?;
-
+    let timeout: usize = match args.opt_value_from_str::<_, usize>("--timeout") {
+        Ok(Some(n)) => n,
+        Ok(None) => 2,
+        Err(e) => {
+            eprintln!("error: invalid value for `--timeout`: {e}\n");
+            print_usage();
+            return Err(Error::Other("invalid value for timeout".parse().unwrap()));
+        }
+    };
+    /*
     let mut con: Connection = client.get_connection().inspect_err(|err| {
         eprintln!("error: please start keydb. example: keydb-server /opt/homebrew/etc/keydb.conf")
     })?;
@@ -557,6 +583,8 @@ fn main() -> Result<(), Error> {
     // TODO: Remove this redis test
     con.set("foo", "bar")?;
     let val: Option<String> = con.get("foo")?;
+
+     */
 
     let chdir: Option<PathBuf> = args.opt_value_from_str(["-C", "--chdir"])?;
     if let Some(dir) = chdir {
@@ -567,11 +595,15 @@ fn main() -> Result<(), Error> {
     let port = args
         .opt_value_from_str(["-p", "--port"])?
         .unwrap_or(DEFAULT_PORT);
+
     info!(port, "start listening");
 
+    /*
     let data_dir: PathBuf = args
         .opt_value_from_str(["-d", "--data-dir"])?
         .unwrap_or_else(|| DEFAULT_DATA_DIR.into());
+
+     */
 
     let scripts_dir: PathBuf = args
         .opt_value_from_str(["-s", "--scripts-dir"])?
@@ -580,12 +612,11 @@ fn main() -> Result<(), Error> {
     let show_assembly = args.contains(["-a", "--show-assembly"]);
     let show_instructions = args.contains(["-i", "--show-instructions"]);
 
-
     let _ = args.finish();
 
     let socket = UdpSocket::bind(format!("0.0.0.0:{port}"))?;
 
-    socket.set_read_timeout(Some(Duration::from_secs(2)))?;
+    socket.set_read_timeout(Some(Duration::from_secs(timeout as u64)))?;
 
     let mut buf = [0u8; 1500];
     let mut last_time = Instant::now();
@@ -615,7 +646,8 @@ fn main() -> Result<(), Error> {
         current_dir: PathBuf::default(),
     };
 
-    let (server_type, server_basic_type) = create_script_server(&mut script, wrapper, show_instructions);
+    let (server_type, server_basic_type) =
+        create_script_server(&mut script, wrapper, show_instructions);
     info!(%server_type, %server_basic_type, "server types");
 
     let tick_fn = do_get_tick(&mut script, &server_type).clone();
@@ -638,7 +670,7 @@ fn main() -> Result<(), Error> {
     for (index, basic_type) in &script.code_gen.layout_cache.universal_short_id_to_layout {
         info!(index, %basic_type, "types");
     }
-    
+
      */
 
     loop {
@@ -665,6 +697,9 @@ fn main() -> Result<(), Error> {
                 if let Some((connection_id, payload, responses, is_new_connection)) =
                     receiver_hub.receive(&buf[0..len], addr_hash)
                 {
+                    for response in responses {
+                        let _ = socket.send_to(&response, peer);
+                    }
                     let mut host_callback = SwampDaemonCallback {
                         server_hub: &mut receiver_hub,
                         db_api: DbApi {
@@ -701,70 +736,71 @@ fn main() -> Result<(), Error> {
                         );
                     }
 
-                    // Parse payload size (next 4 bytes, little-endian)
-                    let universal_hash =
-                        u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]);
+                    if !payload.is_empty() {
+                        // Parse payload size (next 4 bytes, little-endian)
+                        let universal_hash =
+                            u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]);
 
-                    if let Some(gen_func_info) = dispatch_map.get(&universal_hash) {
-                        // The actual payload starts at byte 4
-                        let inner_payload = &payload[4..payload.len()];
+                        if let Some(gen_func_info) = dispatch_map.get(&universal_hash) {
+                            // The actual payload starts at byte 4
+                            let inner_payload = &payload[4..payload.len()];
 
-                        let expected_size = gen_func_info.params[1].total_size.0;
+                            let expected_size = gen_func_info.params[1].total_size.0;
 
-                        if inner_payload.len() == expected_size as usize {
-                            unsafe {
-                                let target_ptr = script
-                                    .vm
-                                    .memory_mut()
-                                    .get_heap_ptr(incoming_param_mem_region.addr.0 as usize);
+                            if inner_payload.len() == expected_size as usize {
+                                unsafe {
+                                    let target_ptr = script
+                                        .vm
+                                        .memory_mut()
+                                        .get_heap_ptr(incoming_param_mem_region.addr.0 as usize);
 
-                                ptr::copy_nonoverlapping(
-                                    inner_payload.as_ptr(),
-                                    target_ptr,
-                                    payload.len(),
+                                    ptr::copy_nonoverlapping(
+                                        inner_payload.as_ptr(),
+                                        target_ptr,
+                                        payload.len(),
+                                    );
+                                }
+
+                                trace!(
+                                    name = gen_func_info.internal_function_definition.assigned_name,
+                                    "calling swamp function"
                                 );
+
+                                let wrapper = SourceMapWrapper {
+                                    source_map: &source_map,
+                                    current_dir: PathBuf::default(),
+                                };
+
+                                Script::execute_returns_unit(
+                                    gen_func_info,
+                                    &[
+                                        RegisterValue::HeapMemoryAddress(HeapMemoryAddress(0)), // no return
+                                        RegisterValue::HeapMemoryAddress(
+                                            script.simulation_value_region.addr, // self
+                                        ),
+                                        RegisterValue::HeapMemoryAddress(
+                                            incoming_param_mem_region.addr, // message
+                                        ),
+                                        RegisterValue::HeapMemoryAddress(HeapMemoryAddress(0)), // `Datagrams` has no size
+                                    ],
+                                    &mut host_callback,
+                                    &mut script.vm,
+                                    &script.code_gen.debug_info,
+                                    wrapper,
+                                    show_instructions,
+                                );
+                            } else {
+                                warn!(
+                                    expected_size,
+                                    encountered_size = inner_payload.len(),
+                                    "payload size is wrong for this type"
+                                )
                             }
-
-                            trace!(
-                                name = gen_func_info.internal_function_definition.assigned_name,
-                                "calling swamp function"
-                            );
-
-                            let wrapper = SourceMapWrapper {
-                                source_map: &source_map,
-                                current_dir: PathBuf::default(),
-                            };
-
-                            Script::execute_returns_unit(
-                                gen_func_info,
-                                &[
-                                    RegisterValue::HeapMemoryAddress(HeapMemoryAddress(0)), // no return
-                                    RegisterValue::HeapMemoryAddress(
-                                        script.simulation_value_region.addr, // self
-                                    ),
-                                    RegisterValue::HeapMemoryAddress(
-                                        incoming_param_mem_region.addr, // message
-                                    ),
-                                    RegisterValue::HeapMemoryAddress(HeapMemoryAddress(0)), // `Datagrams` has no size
-                                ],
-                                &mut host_callback,
-                                &mut script.vm,
-                                &script.code_gen.debug_info,
-                                wrapper,
-                                show_instructions,
-                            );
                         } else {
-                            warn!(
-                                expected_size,
-                                encountered_size = inner_payload.len(),
-                                "payload size is wrong for this type"
-                            )
+                            warn!(universal_hash, "unknown universal type hash");
                         }
-                    } else {
-                        warn!(universal_hash, "unknown universal type hash");
                     }
                 } else {
-                    warn!("unknown datagram");
                 }
             }
 
@@ -772,7 +808,7 @@ fn main() -> Result<(), Error> {
                 if e.kind() == io::ErrorKind::WouldBlock || e.kind() == io::ErrorKind::TimedOut =>
             {
                 let since = last_time.elapsed();
-                if since >= Duration::from_secs(2) {
+                if since >= Duration::from_secs(10) {
                     let mut host_callback = TimeoutDaemonCallback {
                         db_api: DbApi {
                             client: &mut client,
@@ -805,7 +841,7 @@ fn main() -> Result<(), Error> {
                                 &mut script.vm,
                                 &script.code_gen.debug_info,
                                 wrapper,
-                                show_instructions
+                                show_instructions,
                             );
                         }
                     }

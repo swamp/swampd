@@ -26,7 +26,7 @@ swamp-vm-layout = "0.2.22"
 
 
 #frag-datagram = { path = "../../piot/frag-datagram"}
-frag-datagram = "0.0.3"
+frag-datagram = "=0.0.6"
 source-map-cache = "0.0.6"
 getrandom = "0.3.3"
 
