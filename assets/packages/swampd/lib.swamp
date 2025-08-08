@@ -1,0 +1,40 @@
+struct Datagrams
+
+impl Datagrams {
+    external 10 fn write(self, any: Any)
+    external 11 fn id(self) -> Int
+}
+
+type UUID = [Byte; 16]
+type UUID_VIEW = [Byte]
+
+fn uuid_to_string(view: UUID_VIEW) -> String {
+	mut s = ""
+	for x in view {
+		temp = x.string()
+
+		next: String<2> = temp.slice(2..4)
+		s = s + next
+	}
+	s
+}
+
+external 50 fn true_random() -> Int
+external 51 fn generate_uuid() -> UUID_VIEW
+
+struct Db
+
+impl Db {
+    external 500 fn new() -> Db
+
+    /// Automatically serializes the struct value into a HSET with key value pairs
+    /// Note: the value must be flat with basic field types
+    external 501 fn set(mut self, name: String, any: Any)
+
+    /// get is a HGETALL
+    /// if it didn't exist it wil get all zeroed out
+    external 502 fn get(mut self, key: String, any: Any)
+    external 504 fn getset(mut self, key: String, any: Any) // overwrites!
+
+	external 503 fn incr(mut self, key: String) -> Int
+}

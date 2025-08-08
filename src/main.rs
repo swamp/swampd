@@ -6,11 +6,12 @@
 pub mod scan;
 use crate::scan::build_single_param_function_dispatch;
 use bytes::{BufMut, BytesMut};
-use frag_datagram::ServerHub;
 use frag_datagram::server::address_hash;
+use frag_datagram::ServerHub;
 use pico_args::Arguments;
 use redis::{Client, RedisError, TypedCommands};
 use source_map_cache::SourceMap;
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::path::{Path, PathBuf};
@@ -22,14 +23,14 @@ use std::{
     time::{Duration, Instant},
 };
 use swamp::prelude::{
-    BasicTypeKind, BasicTypeRef, CodeGenOptions, CodeGenResult, CompileAndCodeGenOptions,
-    CompileAndVmResult, CompileCodeGenVmResult, CompileOptions, DebugInfo, Fp, GenFunctionInfo,
-    HeapMemoryAddress, HeapMemoryRegion, HostArgs, HostFunctionCallback, MemoryAlignment,
-    MemorySize, ModuleRef, Program, RunMode, RunOptions, SourceMapWrapper, TypeRef, Vm, VmState,
-    compile_codegen_and_create_vm_and_run_first_time,
+    compile_codegen_and_create_vm_and_run_first_time, BasicTypeKind, BasicTypeRef, CodeGenOptions, CodeGenResult,
+    CompileAndCodeGenOptions, CompileAndVmResult, CompileCodeGenVmResult, CompileOptions, DebugInfo, Fp,
+    GenFunctionInfo, HeapMemoryAddress, HeapMemoryRegion, HostArgs, HostFunctionCallback,
+    MemoryAlignment, MemorySize, ModuleRef, Program, RunMode, RunOptions, SourceMapWrapper, TypeRef, Vm,
+    VmState,
 };
-use swamp_runtime::{CompileResult, run_function_with_debug};
-use swamp_vm::prelude::AnyValue;
+use swamp_runtime::{run_function_with_debug, CompileResult};
+use swamp_vm::prelude::{AnyValue, AnyValueMut};
 use swamp_vm_layout::LayoutCache;
 use tracing::{debug, info, trace, warn};
 use tracing_subscriber::layer::SubscriberExt;
@@ -134,10 +135,24 @@ struct DbApi<'a> {
 }
 
 impl<'a> DbApi<'a> {
-    pub fn db_set(&mut self, args: HostArgs) {
-        // ignore self at 1
-        let key_string = args.string(2);
-        let struct_value = args.any(3);
+    pub fn get_field_names(&self, struct_value: AnyValue) -> Vec<String> {
+        trace!(hash=?struct_value.type_hash, "struct has hash");
+        let basic_type = self.type_cache.universal_short_id(struct_value.type_hash);
+
+        if let BasicTypeKind::Struct(struct_type) = &basic_type.kind {
+            let mut field_names = Vec::new();
+            for field in &struct_type.fields {
+                let key = field.name.clone();
+                field_names.push(key);
+            }
+
+            field_names
+        } else {
+            panic!("can not serialize. was not a struct. internal error");
+        }
+    }
+
+    pub fn read_struct(&self, struct_value: AnyValue) -> Vec<(String, String)> {
         trace!(hash=?struct_value.type_hash, "struct has hash");
         let basic_type = self.type_cache.universal_short_id(struct_value.type_hash);
 
@@ -175,24 +190,18 @@ impl<'a> DbApi<'a> {
                 tuples.push((key, value));
             }
 
-            trace!(key_string, ?tuples, "writing tuples");
-            self.client.hset_multiple(key_string, &tuples).unwrap()
+            tuples
         } else {
-            panic!("was not struct. internal error");
+            panic!("can not serialize. was not a struct. internal error");
         }
     }
 
-    pub fn db_get(&mut self, args: HostArgs) {
-        let key_string = args.string(2);
-        let struct_value_mut = args.any_mut(3);
-        trace!(hash=?struct_value_mut.type_hash, "struct has hash");
+    pub fn write_struct(&self, struct_value_mut: AnyValueMut, hashmap: HashMap<String, String>) {
         let basic_type = self
             .type_cache
             .universal_short_id(struct_value_mut.type_hash);
 
         if let BasicTypeKind::Struct(struct_type) = &basic_type.kind {
-            let hashmap = self.client.hgetall(key_string).unwrap();
-
             for field in &struct_type.fields {
                 let key = field.name.clone();
                 let s_opt: Option<&str> = hashmap.get(key.as_str()).map(String::as_str);
@@ -237,6 +246,53 @@ impl<'a> DbApi<'a> {
         } else {
             panic!("was not struct. internal error");
         }
+    }
+    pub fn db_set(&mut self, args: HostArgs) {
+        // ignore self at 1
+        let key_string = args.string(2);
+        let struct_value = args.any(3);
+        let tuples = self.read_struct(struct_value);
+        trace!(key_string, ?tuples, "writing tuples");
+        self.client.hset_multiple(key_string, &tuples).unwrap()
+    }
+
+    pub fn db_hmgetset(&mut self, args: HostArgs) {
+        let key_string = args.string(2);
+        let struct_value_mut = args.any_mut(3);
+        let struct_value = args.any(3);
+
+        let tuples = self.read_struct(struct_value);
+        let field_names: Vec<String> = tuples
+            .iter()
+            .map(|(first, _second)| first.clone())
+            .collect();
+
+        let mut con = self.client.get_connection().unwrap();
+
+        let old_vals: Vec<Option<String>> = redis::pipe()
+            .atomic()
+            .hmget(key_string, field_names.clone())
+            .hset_multiple(key_string, &tuples)
+            .ignore()
+            .query(&mut con)
+            .expect("hmgetset failed");
+
+        let old_map: HashMap<String, String> = field_names
+            .into_iter()
+            .zip(old_vals.into_iter())
+            .filter_map(|(field, opt)| opt.map(|val| (field.to_string(), val)))
+            .collect();
+
+        self.write_struct(struct_value_mut, old_map);
+    }
+
+    pub fn db_get(&mut self, args: HostArgs) {
+        let key_string = args.string(2);
+        let struct_value_mut = args.any_mut(3);
+        trace!(hash=?struct_value_mut.type_hash, "struct has hash");
+
+        let hashmap = self.client.hgetall(key_string).unwrap();
+        self.write_struct(struct_value_mut, hashmap);
     }
 }
 
@@ -317,7 +373,8 @@ impl HostFunctionCallback for TimeoutDaemonCallback<'_> {
             }
             501 => self.db_api.db_set(args),
             502 => self.db_api.db_get(args),
-            _ => panic!("unknown {}", args.function_id ),
+            504 => self.db_api.db_hmgetset(args),
+            _ => panic!("unknown {}", args.function_id),
         }
     }
 }
