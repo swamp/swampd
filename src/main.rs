@@ -35,6 +35,7 @@ use tracing::{debug, info, trace, warn};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Registry};
+use uuid::Uuid;
 
 #[derive(Debug)]
 pub enum RegisterValue {
@@ -174,6 +175,7 @@ impl<'a> DbApi<'a> {
                 tuples.push((key, value));
             }
 
+            trace!(key_string, ?tuples, "writing tuples");
             self.client.hset_multiple(key_string, &tuples).unwrap()
         } else {
             panic!("was not struct. internal error");
@@ -276,6 +278,11 @@ impl HostFunctionCallback for SwampDaemonCallback<'_> {
                 let random_int = u32::from_le_bytes(data);
                 args.set_register(0, random_int)
             }
+            51 => {
+                let id = Uuid::new_v4();
+                let bytes = id.as_bytes();
+                args.write_to_vector_bulk(0, bytes);
+            }
             500 => {} //self.db_api.db_new(args),
             501 => self.db_api.db_set(args),
             502 => self.db_api.db_get(args),
@@ -291,13 +298,26 @@ struct TimeoutDaemonCallback<'a> {
 impl<'a> TimeoutDaemonCallback<'a> {}
 
 impl HostFunctionCallback for TimeoutDaemonCallback<'_> {
-    fn dispatch_host_call(&mut self, args: HostArgs) {
+    fn dispatch_host_call(&mut self, mut args: HostArgs) {
         match args.function_id {
             1 => swamp_std::print::print_fn(args),
             10 => {}
+            50 => {
+                // true_random()
+                let mut data = [0u8; 4];
+                getrandom::fill(&mut data).unwrap();
+                let random_int = u32::from_le_bytes(data);
+                args.set_register(0, random_int)
+            }
+            51 => {
+                let id = Uuid::new_v4();
+                let bytes = id.as_bytes();
+                assert_eq!(bytes.len(), 16, "must be v4");
+                args.write_to_vector_bulk(0, bytes);
+            }
             501 => self.db_api.db_set(args),
             502 => self.db_api.db_get(args),
-            _ => panic!("unknown"),
+            _ => panic!("unknown {}", args.function_id ),
         }
     }
 }
@@ -808,7 +828,7 @@ fn main() -> Result<(), Error> {
                 if e.kind() == io::ErrorKind::WouldBlock || e.kind() == io::ErrorKind::TimedOut =>
             {
                 let since = last_time.elapsed();
-                if since >= Duration::from_secs(10) {
+                if since >= Duration::from_secs(1) {
                     let mut host_callback = TimeoutDaemonCallback {
                         db_api: DbApi {
                             client: &mut client,

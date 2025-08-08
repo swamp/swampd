@@ -37,6 +37,7 @@ bytes = "1.10.1"
 
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+uuid = { version = "1.17.0", features = ["v4"] }
 
 [profile.dev]
 # (use all Cargo defaults)
