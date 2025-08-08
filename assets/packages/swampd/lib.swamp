@@ -35,6 +35,17 @@ impl Db {
     /// if it didn't exist it wil get all zeroed out
     external 502 fn get(mut self, key: String, any: Any)
     external 504 fn getset(mut self, key: String, any: Any) // overwrites!
+	external 513 fn delete(mut self, key: String)
+
+
+	external 505 fn lpush(mut self, key: String, value: String) // TODO: should support [String] for values
+	external 506 fn rpush(mut self, key: String, value: String) // TODO: should support [String] for values
+	external 507 fn lpop(mut self, key: String) -> String
+	external 508 fn rpop(mut self, key: String) -> String
+	external 509 fn rpoplpush(mut self, source: String, destination: String)
+	external 510 fn lset(mut self, key: String, index: Int, data: String)
+	external 511 fn llen(mut self, key: String) -> Int
+	external 512 fn lrange(mut self, key: String, start: Int, stop: Int) -> [String]
 
 	external 503 fn incr(mut self, key: String) -> Int
 }

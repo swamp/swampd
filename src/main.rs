@@ -10,10 +10,12 @@ use frag_datagram::server::address_hash;
 use frag_datagram::ServerHub;
 use pico_args::Arguments;
 use redis::{Client, RedisError, TypedCommands};
+// do not use Commands
 use source_map_cache::SourceMap;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::{
@@ -256,6 +258,86 @@ impl<'a> DbApi<'a> {
         self.client.hset_multiple(key_string, &tuples).unwrap()
     }
 
+    pub fn db_delete(&mut self, args: HostArgs) {
+        // ignore self at 1
+        let key_string = args.string(2);
+        self.client.del(key_string).unwrap();
+    }
+
+    // external 505 fn lpush(mut self, key: String, vec: String)
+    pub fn db_lpush(&mut self, args: HostArgs) {
+        let key_string = args.string(2);
+        let value_string = args.string(3);
+
+        self.client
+            .lpush(key_string, &[value_string])
+            .expect("db_lpush failed");
+    }
+
+    // external 506 fn rpush(mut self, key: String, vec: String)
+    pub fn db_rpush(&mut self, args: HostArgs) {
+        let key_string = args.string(2);
+        let value_string = args.string(3);
+
+        self.client
+            .rpush(key_string, &[value_string])
+            .expect("db_rpush failed");
+    }
+
+    // external 507 fn lpop(mut self, key: String) -> String
+    pub fn db_lpop(&mut self, mut args: HostArgs) {
+        let key_string = args.string(2);
+
+        let values: Vec<String> = self
+            .client
+            .lpop(key_string, Some(NonZeroUsize::try_from(1usize).unwrap()))
+            .expect("db_lpop failed");
+        let single = values[0].as_bytes();
+        args.write_to_vector_bulk(0, single);
+    }
+
+    // external 509 fn rpop(mut self, key: String) -> String
+    pub fn db_rpop(&mut self, mut args: HostArgs) {
+        let key_string = args.string(2);
+
+        let values: Vec<String> = self
+            .client
+            .rpop(key_string, Some(NonZeroUsize::try_from(1usize).unwrap()))
+            .expect("db_rpop failed");
+        let single = values[0].as_bytes();
+        args.write_to_vector_bulk(0, single);
+    }
+
+    // external 510 fn rpoplpush(mut self, source: String, destination: String)
+    pub fn db_rpoplpush(&mut self, args: HostArgs) {
+        let source_list = args.string(2);
+        let destination_list = args.string(3);
+
+        self.client
+            .rpoplpush(source_list, destination_list)
+            .expect("TODO: panic message");
+    }
+
+    //external 510 fn lset(mut self, key: String, index: Int, data: String)
+    pub fn db_lset(&mut self, args: HostArgs) {
+        let key = args.string(2);
+        let index = args.register_i32(3);
+        let value = args.string(4);
+
+        self.client
+            .lset(key, index as isize, value)
+            .expect("TODO: panic message");
+    }
+
+    // external 511 fn llen(mut self, key: String) -> Int
+    pub fn db_llen(&mut self, mut args: HostArgs) {
+        let key = args.string(2);
+
+        let length = self.client.llen(key).expect("TODO: panic message");
+
+        args.set_register(0, length as u32);
+    }
+
     pub fn db_hmgetset(&mut self, args: HostArgs) {
         let key_string = args.string(2);
         let struct_value_mut = args.any_mut(3);
@@ -293,6 +375,11 @@ impl<'a> DbApi<'a> {
 
         let hashmap = self.client.hgetall(key_string).unwrap();
         self.write_struct(struct_value_mut, hashmap);
+    }
+
+    pub fn db_incr(&mut self, args: HostArgs) {
+        let key_string = args.string(2);
+        self.client.incr(key_string, 1).expect("incr failed");
     }
 }
 
@@ -342,6 +429,17 @@ impl HostFunctionCallback for SwampDaemonCallback<'_> {
             500 => {} //self.db_api.db_new(args),
             501 => self.db_api.db_set(args),
             502 => self.db_api.db_get(args),
+            503 => self.db_api.db_incr(args),
+            504 => self.db_api.db_hmgetset(args),
+            505 => self.db_api.db_lpush(args),
+            506 => self.db_api.db_rpush(args),
+            507 => self.db_api.db_lpop(args),
+            508 => self.db_api.db_rpop(args),
+            509 => self.db_api.db_rpoplpush(args),
+            510 => self.db_api.db_lset(args),
+            511 => self.db_api.db_llen(args),
+            512 => self.db_api.db_delete(args),
+
             _ => panic!("unknown"),
         }
     }
@@ -373,7 +471,27 @@ impl HostFunctionCallback for TimeoutDaemonCallback<'_> {
             }
             501 => self.db_api.db_set(args),
             502 => self.db_api.db_get(args),
+            503 => self.db_api.db_incr(args),
             504 => self.db_api.db_hmgetset(args),
+            505 => self.db_api.db_lpush(args),
+            506 => self.db_api.db_rpush(args),
+            507 => self.db_api.db_lpop(args),
+            508 => self.db_api.db_rpop(args),
+            509 => self.db_api.db_rpoplpush(args),
+            510 => self.db_api.db_lset(args),
+            511 => self.db_api.db_llen(args),
+            512 => self.db_api.db_delete(args),
+
+            /*
+                        external 505 fn lpush(mut self, key: String, value: String) // TODO: should support [String] for values
+            external 506 fn rpush(mut self, key: String, value: String) // TODO: should support [String] for values
+            external 507 fn lpop(mut self, key: String) -> String
+            external 508 fn rpop(mut self, key: String) -> String
+            external 509 fn rpoplpush(mut self, source: String, destination: String)
+            external 510 fn lset(mut self, key: String, index: Int, data: String)
+            external 511 fn llen(mut self, key: String) -> Int
+            external 512 fn lrange(mut self, key: String, start: Int, stop: Int) -> [String]
+                     */
             _ => panic!("unknown {}", args.function_id),
         }
     }
