@@ -1158,7 +1158,7 @@ dependencies = [
 
 [[package]]
 name = "swampd"
-version = "0.0.2"
+version = "0.0.4"
 dependencies = [
  "bytes",
  "frag-datagram",
