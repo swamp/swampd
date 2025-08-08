@@ -10,12 +10,12 @@ categories = ["network-programming", "asynchronous"]
 
 [dependencies]
 
-swamp = "0.2.22"
-swamp-runtime = "0.2.22"
-swamp-std = "0.2.22"
-swamp-vm = "0.2.22"
-swamp-compile = "0.2.22"
-swamp-vm-layout = "0.2.22"
+swamp = "0.2.23"
+swamp-runtime = "0.2.23"
+swamp-std = "0.2.23"
+swamp-vm = "0.2.23"
+swamp-compile = "0.2.23"
+swamp-vm-layout = "0.2.23"
 
 #swamp = { path = "../swamp/crates/swamp", features = ["debug_vm"] }
 #swamp-runtime =  { path = "../swamp/crates/runtime" , features = ["debug_vm"]}

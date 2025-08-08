@@ -1,0 +1,19 @@
+[Unit]
+Description=SwampD Server
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=swampd
+Group=swampd
+
+WorkingDirectory=/etc/game/
+
+ExecStart=/opt/swampd/swampd -s server
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
