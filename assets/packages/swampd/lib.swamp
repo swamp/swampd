@@ -35,6 +35,8 @@ impl Db {
     /// if it didn't exist it wil get all zeroed out
     external 502 fn get(mut self, key: String, any: Any)
     external 504 fn getset(mut self, key: String, any: Any) // overwrites!
+    external 514 fn get_int(self, key: String) -> Int
+    external 515 fn set_int(self, key: String, val: Int)
 	external 513 fn delete(mut self, key: String)
 
 

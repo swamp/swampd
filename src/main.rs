@@ -34,6 +34,7 @@ use swamp::prelude::{
 use swamp_runtime::{run_function_with_debug, CompileResult};
 use swamp_vm::prelude::{AnyValue, AnyValueMut};
 use swamp_vm_layout::LayoutCache;
+use swamp_vm_types::{VecHeader, VEC_HEADER_PAYLOAD_OFFSET};
 use tracing::{debug, info, trace, warn};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -186,7 +187,18 @@ impl<'a> DbApi<'a> {
                         let x = i32::from_le_bytes(arr);
                         Fp::from_raw(x).to_string()
                     }
-                    BasicTypeKind::StringView { .. } => "todo".to_string(),
+                    BasicTypeKind::StringStorage { .. } => {
+                        let vec_header = raw_bytes_for_value.as_ptr() as *const VecHeader;
+                        unsafe {
+                            let byte_length = (*vec_header).element_count;
+                            let payload_const_ptr = raw_bytes_for_value
+                                .as_ptr()
+                                .add(VEC_HEADER_PAYLOAD_OFFSET.0 as usize);
+                            let raw_slice =
+                                std::slice::from_raw_parts(payload_const_ptr, byte_length as usize);
+                            String::from_utf8(raw_slice.to_vec()).unwrap()
+                        }
+                    }
                     _ => panic!("can not serialize"),
                 };
                 tuples.push((key, value));
@@ -241,6 +253,29 @@ impl<'a> DbApi<'a> {
                         let v: f32 = parse_or_warn(s_opt, &key, "f32");
                         let converted = Fp::from(v);
                         dst.copy_from_slice(&converted.inner().to_le_bytes());
+                    }
+                    BasicTypeKind::StringStorage {
+                        element_type: _,
+                        char: _,
+                        capacity: _,
+                    } => {
+                        let v: &str = s_opt.unwrap_or_default();
+                        let string_bytes = v.as_bytes();
+                        unsafe {
+                            let vec_header = dst.as_ptr() as *mut VecHeader;
+                            (*vec_header).element_count = string_bytes.len() as u16;
+                            let payload_ptr =
+                                dst.as_mut_ptr().add(VEC_HEADER_PAYLOAD_OFFSET.0 as usize);
+                            assert!(
+                                (*vec_header).capacity as usize >= string_bytes.len(),
+                                "not enough capacity"
+                            );
+                            ptr::copy_nonoverlapping(
+                                string_bytes.as_ptr(),
+                                payload_ptr,
+                                string_bytes.len(),
+                            );
+                        }
                     }
                     _ => panic!("can not deserialize"),
                 };
@@ -377,9 +412,26 @@ impl<'a> DbApi<'a> {
         self.write_struct(struct_value_mut, hashmap);
     }
 
-    pub fn db_incr(&mut self, args: HostArgs) {
+    pub fn db_get_int(&mut self, mut args: HostArgs) {
         let key_string = args.string(2);
-        self.client.incr(key_string, 1).expect("incr failed");
+        trace!(key_string, "trying to get int");
+        let int_value = self.client.get_int(key_string).unwrap_or(None).unwrap_or(0) as u32;
+        args.set_register(0, int_value)
+    }
+
+    pub fn db_set_int(&mut self, mut args: HostArgs) {
+        let key_string = args.string(2);
+        let val = args.register_i32(3);
+
+        trace!(key_string, val, "trying to set int");
+        self.client.set(key_string, val.to_string()).unwrap();
+    }
+
+    pub fn db_incr(&mut self, mut args: HostArgs) {
+        let key_string = args.string(2);
+        debug!(key_string, "db_incr");
+        let new_value = self.client.incr(key_string, 1).expect("incr failed");
+        args.set_register(0, new_value as u32);
     }
 }
 
@@ -438,9 +490,11 @@ impl HostFunctionCallback for SwampDaemonCallback<'_> {
             509 => self.db_api.db_rpoplpush(args),
             510 => self.db_api.db_lset(args),
             511 => self.db_api.db_llen(args),
-            512 => self.db_api.db_delete(args),
-
-            _ => panic!("unknown"),
+            512 => todo!(), // lrange
+            513 => self.db_api.db_delete(args),
+            514 => self.db_api.db_get_int(args),
+            515 => self.db_api.db_set_int(args),
+            _ => panic!("unknown {}", args.function_id),
         }
     }
 }
@@ -480,7 +534,11 @@ impl HostFunctionCallback for TimeoutDaemonCallback<'_> {
             509 => self.db_api.db_rpoplpush(args),
             510 => self.db_api.db_lset(args),
             511 => self.db_api.db_llen(args),
-            512 => self.db_api.db_delete(args),
+            512 => todo!(), // lrange
+            513 => self.db_api.db_delete(args),
+            514 => self.db_api.db_get_int(args),
+            515 => self.db_api.db_set_int(args),
+            _ => panic!("unknown {}", args.function_id),
 
             /*
                         external 505 fn lpush(mut self, key: String, value: String) // TODO: should support [String] for values
