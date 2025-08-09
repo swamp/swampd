@@ -1,6 +1,6 @@
 [package]
 name = "swampd"
-version = "0.0.5"
+version = "0.0.6"
 edition = "2024"
 description = "Lightweight UDP‑based server embedding the Swamp scripting VM with built‑in key‑value storage"
 license = "MIT"
@@ -40,6 +40,7 @@ bytes = "1.10.1"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 uuid = { version = "1.17.0", features = ["v4"] }
+urlencoding = "2.1.3"
 
 [profile.dev]
 # (use all Cargo defaults)

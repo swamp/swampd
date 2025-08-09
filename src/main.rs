@@ -818,7 +818,31 @@ fn main() -> Result<(), Error> {
         print_usage();
         return Ok(());
     }
-    let mut client = redis::Client::open("redis://127.0.0.1/")?;
+
+    let password = env::var("KEYDB_PASSWORD").ok();
+
+    let db_host: Option<String> = args.opt_value_from_str(["-d", "--db_host"])?;
+    let redis_host = if let Some(db_host) = db_host {
+        db_host
+    } else {
+        "127.0.0.1:6379".to_string()
+    };
+    info!(redis_host, "found redis host");
+
+    let prefix = match password.as_deref() {
+        None => {
+            info!("no! password!!");
+            ""
+        }
+        Some(password) => {
+            info!("found password!!");
+            &format!(":{}@", urlencoding::encode(password))
+        }
+    };
+
+    let complete_redis_url = format!("redis://{}{}", prefix, redis_host);
+
+    let mut client = redis::Client::open(complete_redis_url)?;
     let timeout: usize = match args.opt_value_from_str::<_, usize>("--timeout") {
         Ok(Some(n)) => n,
         Ok(None) => 2,

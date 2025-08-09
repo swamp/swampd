@@ -109,3 +109,12 @@ sudo journalctl -u swampd -f
 ```sh
 rsync -avL -e ssh --rsync-path="sudo rsync" server packages swamp.yini username@game.swampd.net:/etc/game/
 ```
+
+### Keydb
+
+conf file:
+
+```
+bind 0.0.0.0
+requirepass YourStrongPasswordHere
+```
