@@ -31,10 +31,12 @@ use swamp::prelude::{
     MemoryAlignment, MemorySize, ModuleRef, Program, RunMode, RunOptions, SourceMapWrapper, TypeRef, Vm,
     VmState,
 };
-use swamp_runtime::{run_function_with_debug, CompileResult};
+use swamp_runtime::{
+    run_function_with_debug, CompileCodeGenAndVmOptions, CompileResult, VmOptions,
+};
 use swamp_vm::prelude::{AnyValue, AnyValueMut};
+use swamp_vm_isa::{VecHeader, VEC_HEADER_PAYLOAD_OFFSET};
 use swamp_vm_layout::LayoutCache;
-use swamp_vm_types::{VecHeader, VEC_HEADER_PAYLOAD_OFFSET};
 use tracing::{debug, info, trace, warn};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -550,7 +552,6 @@ impl HostFunctionCallback for TimeoutDaemonCallback<'_> {
             external 511 fn llen(mut self, key: String) -> Int
             external 512 fn lrange(mut self, key: String, start: Int, stop: Int) -> [String]
                      */
-            _ => panic!("unknown {}", args.function_id),
         }
     }
 }
@@ -702,6 +703,7 @@ fn compile_and_create_vm(
     show_assembly: bool,
 ) -> Result<CompileCodeGenVmResult, Error> {
     let scripts_crate_path = ["crate".to_string(), "main".to_string()];
+
     let compile_and_codegen = CompileAndCodeGenOptions {
         compile_options: CompileOptions {
             show_semantic: false,
@@ -711,6 +713,7 @@ fn compile_and_create_vm(
             show_hints: true,
             show_information: false,
             show_types: false,
+            allow_unsafe: false,
         },
         code_gen_options: CodeGenOptions {
             show_disasm: show_assembly,
@@ -723,12 +726,20 @@ fn compile_and_create_vm(
         run_mode: RunMode::Deployed,
     };
 
+    let compile_codegen_and_vm_options = CompileCodeGenAndVmOptions {
+        vm_options: VmOptions {
+            stack_size: 512 * 1024 * 1024,
+            heap_size: 128 * 1024,
+        },
+        codegen: compile_and_codegen,
+    };
+
     //let should_show_information = compile_and_codegen.compile_options.show_information;
 
     let program = compile_codegen_and_create_vm_and_run_first_time(
         source_map,
         &scripts_crate_path,
-        compile_and_codegen,
+        compile_codegen_and_vm_options,
     );
 
     if let Some(compile_and_vm_result) = program {

@@ -372,9 +372,9 @@ checksum = "1171693293099992e19cddea4e8b849964e9846f4acee11b3948bcc337be8776"
 
 [[package]]
 name = "libredox"
-version = "0.1.4"
+version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1580801010e535496706ba011c15f8532df6b42297d2e471fec38ceadd8c0638"
+checksum = "391290121bad3d37fbddad76d8f5d1c1c314cfc646d143d7e07a3086ddff0ce3"
 dependencies = [
  "bitflags",
  "libc",
@@ -592,9 +592,9 @@ dependencies = [
 
 [[package]]
 name = "redox_users"
-version = "0.5.0"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd6f9d3d47bdd2ad6945c5015a226ec6155d0bcdfd8f7cd29f86b71f8de99d2b"
+checksum = "a4e608c6638b9c18977b00b475ac1f28d14e84b27d8d42f70e0bf1e3dec127ac"
 dependencies = [
  "getrandom 0.2.16",
  "libredox",
@@ -774,9 +774,9 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "swamp"
-version = "0.2.23"
+version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b435df6e62ca639c483b96530039e0bb95f47abba689526e71ffb9e13448ecf3"
+checksum = "3e8343664e16808d7459707fbf794b902c57d3c5eedc17419a3824d7f8a6d624"
 dependencies = [
  "source-map-cache",
  "source-map-node",
@@ -796,15 +796,16 @@ dependencies = [
  "swamp-types",
  "swamp-vm",
  "swamp-vm-debug-info",
+ "swamp-vm-isa",
  "swamp-vm-types",
  "swamp-yini",
 ]
 
 [[package]]
 name = "swamp-analyzer"
-version = "0.2.23"
+version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86d8a595eac75572ef00c0f6870519316d0e015bf72efe41507e2d1e25fda6dc"
+checksum = "4dc580f0c37560ab2f26d82a0486aa221b3918a054b10b0712be0a9d708b9507"
 dependencies = [
  "seq-map",
  "seq-set",
@@ -821,24 +822,24 @@ dependencies = [
 
 [[package]]
 name = "swamp-ast"
-version = "0.2.23"
+version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d1f82e9bad104d1824a22109ab6f97c8adac076e5dfdf6c77ebc3188cfcf55c1"
+checksum = "c85e9ea624a3435705b5e79b5b96dcfd9b2b3e34dbd6501e6f05d387dea5d756"
 
 [[package]]
 name = "swamp-attributes"
-version = "0.2.23"
+version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56721a868759385ec45d966225782b06cff69491c2814aebfc34186f89628e99"
+checksum = "1f4776901656da93cb995d3b00b2600685ba6f785057c73efdb4e99029c6c2af"
 dependencies = [
  "source-map-node",
 ]
 
 [[package]]
 name = "swamp-code-gen"
-version = "0.2.23"
+version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "915ff881a1be15187d7b735e5977d75872bcfcd2536c9db8675fc764e3532699"
+checksum = "4135f4466f74c3e0387c38d0d7a709ac2fa650aa2c22e1217b2fd125b511d10a"
 dependencies = [
  "seq-map",
  "source-map-cache",
@@ -849,6 +850,7 @@ dependencies = [
  "swamp-vm-debug-info",
  "swamp-vm-disasm",
  "swamp-vm-instr-build",
+ "swamp-vm-isa",
  "swamp-vm-layout",
  "swamp-vm-types",
  "tinter",
@@ -857,9 +859,9 @@ dependencies = [
 
 [[package]]
 name = "swamp-code-gen-program"
-version = "0.2.23"
+version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66b0f03c0986ac68bdc6a6e751977ec2e40e48d82a04bf615fb4ed4148b76d25"
+checksum = "50855d2b5e96c876e524f9bfccb8d41e9acd2ad10d5966a92f0630634c3c57df"
 dependencies = [
  "source-map-cache",
  "swamp-code-gen",
@@ -871,9 +873,9 @@ dependencies = [
 
 [[package]]
 name = "swamp-compile"
-version = "0.2.23"
+version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "10f350276719482b9510cfb699d1cfde5c6d4f3d4ce7e5618acd177f6a23412c"
+checksum = "5ee41ff86e3a1fd4c6f515649a21e2c3613294d6386af74d170daab0b2a7a921"
 dependencies = [
  "regex",
  "seq-map",
@@ -896,9 +898,9 @@ dependencies = [
 
 [[package]]
 name = "swamp-core"
-version = "0.2.23"
+version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "153b6f0055b36013bba47a4bdd3dca381f7bf3ce3aa5bf68f5a9b30cf6e1b15a"
+checksum = "b63af33428e9c4f0bd0a6c173e1af889ff547904b032af5de4f9e12e9fed5b50"
 dependencies = [
  "source-map-node",
  "swamp-modules",
@@ -910,9 +912,9 @@ dependencies = [
 
 [[package]]
 name = "swamp-dep-loader"
-version = "0.2.23"
+version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "833f0214869f50e274f6b923210fc3bdbdd335261c8bdea5e6bab7536ba520fb"
+checksum = "cc3b75ab4a89428e4f30b04d4f4e413748df649d9e5bb580841d66ce3f93845a"
 dependencies = [
  "dirs",
  "seq-map",
@@ -925,9 +927,9 @@ dependencies = [
 
 [[package]]
 name = "swamp-error-report"
-version = "0.2.23"
+version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b29966cbd7be35f5d77137e998b8d9ff727c8772eac5f4b1198b539418d5426d"
+checksum = "6fe00c8923e30ecaa373307db6a20c62a712dd6fa743441c20e90a72aa0fd7d0"
 dependencies = [
  "eira",
  "source-map-cache",
@@ -940,9 +942,9 @@ dependencies = [
 
 [[package]]
 name = "swamp-modules"
-version = "0.2.23"
+version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c47b365c52c0de212bf55c699850118350f54d8c547801dd284c129075e0b66c"
+checksum = "4f2cda9bfd0bcff7649c9d22a74bdb0824a1b93b7c4615f291d3a85e1a59e231"
 dependencies = [
  "seq-map",
  "source-map-node",
@@ -955,9 +957,9 @@ dependencies = [
 
 [[package]]
 name = "swamp-parser"
-version = "0.2.23"
+version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a079f6f64672c27fc8a2dcfd18d2e007983743e48bbf76d5145f93d89da5333"
+checksum = "411dd620e6ec9046a980d08e23de5a0a8807a4f26403b39cbb9a669b583f61cd"
 dependencies = [
  "pest",
  "pest_derive",
@@ -967,9 +969,9 @@ dependencies = [
 
 [[package]]
 name = "swamp-pretty-print"
-version = "0.2.23"
+version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "721ed6d5ff00819f2076732ca9c5b3bf63cb3309c56ddcfc7533abe0a8378bd4"
+checksum = "8dc919a6f632f89e1a5d73147668c2135b6a459be231515486aec0d2707438e0"
 dependencies = [
  "seq-map",
  "source-map-cache",
@@ -982,9 +984,9 @@ dependencies = [
 
 [[package]]
 name = "swamp-program-analyzer"
-version = "0.2.23"
+version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e938b9ccd49a30890bb0b76b91660be6c84f8d07fca34cfd334b698bd7b449ff"
+checksum = "f7aff68acd755696bb9d2616ee980d0bd106983fa062fe2d101ebfb74f53c701"
 dependencies = [
  "source-map-cache",
  "swamp-analyzer",
@@ -997,9 +999,9 @@ dependencies = [
 
 [[package]]
 name = "swamp-refs"
-version = "0.2.23"
+version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "348ae9e461c7e174fd9fe431e6f1b115e7d1c1c1d4763e7c9df28cad8ae93d51"
+checksum = "6cffac92ef8d32d1fb94681e17039b176fd96bd2768106a983a2f77fd3259413"
 dependencies = [
  "seq-map",
  "source-map-node",
@@ -1008,9 +1010,9 @@ dependencies = [
 
 [[package]]
 name = "swamp-runtime"
-version = "0.2.23"
+version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51a90642e33db321cdc45bdf343cdfcefca458de0aa76d37355cc388b9c47a1f"
+checksum = "dbd9d7af8260aa6f73471f54394ec13b65ac7feec1c9e3d53811709b32efc17b"
 dependencies = [
  "seq-map",
  "source-map-cache",
@@ -1025,6 +1027,7 @@ dependencies = [
  "swamp-vm",
  "swamp-vm-debug-info",
  "swamp-vm-disasm",
+ "swamp-vm-isa",
  "swamp-vm-layout",
  "swamp-vm-types",
  "tinter",
@@ -1032,9 +1035,9 @@ dependencies = [
 
 [[package]]
 name = "swamp-semantic"
-version = "0.2.23"
+version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cfda24dfc5c3390d452102ff93231ace2d06a6c166f546a922b80c116a151efc"
+checksum = "405d73deec47373c0a3bdd7ff71de9fd2519f7dd161cbdda22f7272d3ceb45b1"
 dependencies = [
  "fixed32",
  "seq-map",
@@ -1048,19 +1051,20 @@ dependencies = [
 
 [[package]]
 name = "swamp-std"
-version = "0.2.23"
+version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b45f033a4c22abb5f1355bd7c752ce4ec335985cb07d7e34d51af09323c0c01"
+checksum = "813cb37573808f4771ec38532606360ee526aaf653e0d641b6f32ff33cdded9b"
 dependencies = [
  "swamp-vm",
+ "swamp-vm-isa",
  "swamp-vm-types",
 ]
 
 [[package]]
 name = "swamp-symbol"
-version = "0.2.23"
+version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "45d15975312e373717360ddb4696662eabfa6a0971ca281ab7435c1983f08a20"
+checksum = "7dcf9ed5c12bdf24bee17f28c514be34e2f862d1c95663cd8e2b8ed8f6ae0e3b"
 dependencies = [
  "seq-map",
  "source-map-node",
@@ -1068,9 +1072,9 @@ dependencies = [
 
 [[package]]
 name = "swamp-types"
-version = "0.2.23"
+version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "afd8762d3077e248c2e2abb6e522000f2d21c6a1a948673f302f70d0e86117a5"
+checksum = "3212717fd6a3427f793d127163c49ba4234202474fca06df08d4aa91700aaee2"
 dependencies = [
  "seq-fmt",
  "seq-map",
@@ -1080,58 +1084,70 @@ dependencies = [
 
 [[package]]
 name = "swamp-vm"
-version = "0.2.23"
+version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11f902918210ab5c1b91b409cf1dcb0ce823b675b5c1f4b9f5377bb0546b734b"
+checksum = "1fd9249e125a2f1779007dbba4991f71493d37a831f0da95a813aada90134e33"
 dependencies = [
  "fixed32",
  "hashmap-mem",
  "sparse-mem",
  "squirrel-prng",
- "swamp-vm-types",
+ "swamp-vm-isa",
  "tinter",
 ]
 
 [[package]]
 name = "swamp-vm-debug-info"
-version = "0.2.23"
+version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41204de2ea519634fabfa82b7bc69318e47f70445776990b77128c843c1cba7a"
+checksum = "e1d32725effd601f97a419996ec7fece8e6c8f2baf96f900368c1a6a7702f0c6"
 dependencies = [
  "seq-map",
+ "swamp-vm-isa",
  "swamp-vm-types",
 ]
 
 [[package]]
 name = "swamp-vm-disasm"
-version = "0.2.23"
+version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d62c6494cd042558d41053bc97adcd59b44c3f4d272ec522b7df87adaaeec4a0"
+checksum = "79e106cc19f3b0151dd3451ffef23816bde93081a2e3efba1d5e614adbb04765"
 dependencies = [
  "fixed32",
  "seq-map",
  "source-map-cache",
  "source-map-node",
  "swamp-vm-debug-info",
+ "swamp-vm-isa",
  "swamp-vm-types",
  "tinter",
 ]
 
 [[package]]
 name = "swamp-vm-instr-build"
-version = "0.2.23"
+version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a3e8cea62968608b11cff7b59f5d272e8f48d506da9c57508853df4854d5341"
+checksum = "4387a982c3cb40895cc673fb0c2a33f585ca2bdf6188ff325add450929184397"
 dependencies = [
  "source-map-node",
+ "swamp-vm-isa",
  "swamp-vm-types",
 ]
 
 [[package]]
-name = "swamp-vm-layout"
-version = "0.2.23"
+name = "swamp-vm-isa"
+version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd3923a0888a0e80da99999dffd3a8f511379dcd4fdee03a1cc758adff4c2010"
+checksum = "79a63e4f0d2faffad972aa0fb653d9dd21e61a521e08912523ee6e2aed90069d"
+dependencies = [
+ "hashmap-mem",
+]
+
+[[package]]
+name = "swamp-vm-layout"
+version = "0.2.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "048dd432905dd8d46ab93a46bba5bb7b97355ce1c417a06b108fd83bcfb21f6c"
 dependencies = [
  "hashmap-mem",
  "seq-map",
@@ -1139,19 +1155,20 @@ dependencies = [
  "sparse-mem",
  "swamp-symbol",
  "swamp-types",
+ "swamp-vm-isa",
  "swamp-vm-types",
 ]
 
 [[package]]
 name = "swamp-vm-types"
-version = "0.2.23"
+version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0b2939e524a8d5c5655d71bbb598b750ae0d783923fa4d6fa34cab76879c6c1"
+checksum = "85cb3456d33448b4f5ac931fb66f1f8ff62d6a0b96e27cbf5ae081b99f5c7def"
 dependencies = [
  "fxhash",
- "hashmap-mem",
  "seq-fmt",
  "source-map-node",
+ "swamp-vm-isa",
  "tinter",
  "tracing",
  "yansi",
@@ -1159,9 +1176,9 @@ dependencies = [
 
 [[package]]
 name = "swamp-yini"
-version = "0.2.23"
+version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e411c41849f0ba61454f3ce1a5c9baa46b71781e60a2cab49d2c6541d0662845"
+checksum = "5e7e2ff7e4d3a2f726fd423e776fea787ab46a2f23429f25533e60350cf51dd6"
 dependencies = [
  "tracing",
  "yini",
@@ -1183,8 +1200,8 @@ dependencies = [
  "swamp-runtime",
  "swamp-std",
  "swamp-vm",
+ "swamp-vm-isa",
  "swamp-vm-layout",
- "swamp-vm-types",
  "tracing",
  "tracing-subscriber",
  "urlencoding",
@@ -1215,18 +1232,18 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.12"
+version = "2.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "567b8a2dae586314f7be2a752ec7474332959c6460e02bde30d702a66d488708"
+checksum = "0b0949c3a6c842cbde3f1686d6eea5a010516deb7085f79db747562d4102f41e"
 dependencies = [
  "thiserror-impl",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.12"
+version = "2.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f7cf42b4507d8ea322120659672cf1b9dbb93f8f2d4ecfd6e51350ff5b17a1d"
+checksum = "cc5b44b4ab9c2fdd0e0512e6bece8388e214c0749f5862b114cc5b7a25daf227"
 dependencies = [
  "proc-macro2",
  "quote",

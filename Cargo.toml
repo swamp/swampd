@@ -10,19 +10,19 @@ categories = ["network-programming", "asynchronous"]
 
 [dependencies]
 
-swamp = "=0.2.23"
-swamp-runtime = "=0.2.23"
-swamp-std = "=0.2.23"
-swamp-vm = "=0.2.23"
-swamp-compile = "=0.2.23"
-swamp-vm-layout = "=0.2.23"
-swamp-vm-types = "=0.2.23"
+swamp = "=0.2.24"
+swamp-runtime = "=0.2.24"
+swamp-std = "=0.2.24"
+swamp-vm = "=0.2.24"
+swamp-compile = "=0.2.24"
+swamp-vm-layout = "=0.2.24"
+swamp-vm-isa = "=0.2.24"
 
 #swamp = { path = "../swamp/crates/swamp", features = ["debug_vm"] }
 #swamp-runtime =  { path = "../swamp/crates/runtime" , features = ["debug_vm"]}
 #swamp-std =  { path = "../swamp/crates/std" }
 #swamp-vm =  { path = "../swamp/crates/vm", features = ["debug_vm"] }
-#swamp-vm-types =  { path = "../swamp/crates/vm-types" }
+#swamp-vm-isa = { path = "../swamp/crates/vm-isa"}
 #swamp-compile =  { path = "../swamp/crates/compile" }
 #swamp-vm-layout =  { path = "../swamp/crates/vm-layout" }
 
