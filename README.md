@@ -47,13 +47,15 @@ keydb-cli get foo     # -> "bar"
 
 ## Server
 
+### Add user
+
 ```sh
 sudo useradd -m -s /bin/bash [name]
 sudo usermod -aG sudo [name]
 sudo passwd [name]
 ```
 
-## Keydb
+### Install Keydb
 
 ```sh
 echo "deb https://download.keydb.dev/open-source-dist jammy main" | sudo tee /etc/apt/sources.list.d/keydb.list
@@ -104,17 +106,67 @@ sudo systemctl status swampd
 sudo journalctl -u swampd -f
 ```
 
-### Copy server script files to cloud
+### Setup passwordless login
+
+#### Create a secure key
 
 ```sh
-rsync -avL -e ssh --rsync-path="sudo rsync" server packages swamp.yini username@game.swampd.net:/etc/game/
+ssh-keygen -t ed25519 -C "your_email@example.com"
+```
+
+files are stored as `~/.ssh/id_ed25519` (never ever share this secret file!)  and `~/.ssh/id_ed25519.pub` (fine to share)
+
+#### Copy the public key to the server
+
+```sh
+ssh-copy-id -i ~/.ssh/id_ed25519.pub username@host
+```
+
+it will add the keys to `~/.ssh/authorized_keys` on the server side.
+
+if you do not have `ssh-copy-id`, you can do it manually:
+
+```sh
+ssh username@host "mkdir -p ~/.ssh && chmod 700 ~/.ssh"
+cat ~/.ssh/id_ed25519.pub | ssh username@host "cat >> ~/.ssh/authorized_keys"
+ssh username@host "chmod 600 ~/.ssh/authorized_keys"
+```
+
+(`>>` means append the incoming stdin to the file)
+
+#### Test the login
+
+```sh
+ssh username@host
+```
+
+Make sure you are not prompted for a login
+
+### Copy server script files to cloud
+
+This will sync the local files to the server
+
+```sh
+rsync -avL -e ssh --rsync-path="sudo rsync" server packages swamp.yini mangrove.yini username@game.swampd.net:/etc/game/
+```
+
+example, for the game meteorite:
+
+```sh
+rsync -avL -e ssh --rsync-path="sudo rsync" server packages swamp.yini catnipped@meteorite.swampd.net:/etc/meteorite/
+```
+
+then restart the server:
+
+```sh
+ssh -t catnipped@meteorite.swampd.net "sudo systemctl restart swampd"
 ```
 
 ### Keydb
 
 conf file:
 
-```
+```sh
 bind 0.0.0.0
 requirepass YourStrongPasswordHere
 ```
