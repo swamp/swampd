@@ -4,6 +4,9 @@
  */
 
 pub mod scan;
+mod ini;
+
+use crate::ini::read_yini;
 use crate::scan::build_single_param_function_dispatch;
 use bytes::{BufMut, BytesMut};
 use frag_datagram::server::address_hash;
@@ -42,6 +45,7 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Registry};
 use uuid::Uuid;
+use crate::ini::SwampdIni;
 
 #[derive(Debug)]
 pub enum RegisterValue {
@@ -700,10 +704,10 @@ impl Script {
 
 fn compile_and_create_vm(
     source_map: &mut SourceMap,
+    settings: &SwampdIni,
     show_assembly: bool,
 ) -> Result<CompileCodeGenVmResult, Error> {
     let scripts_crate_path = ["crate".to_string(), "main".to_string()];
-
     let compile_and_codegen = CompileAndCodeGenOptions {
         compile_options: CompileOptions {
             show_semantic: false,
@@ -728,8 +732,8 @@ fn compile_and_create_vm(
 
     let compile_codegen_and_vm_options = CompileCodeGenAndVmOptions {
         vm_options: VmOptions {
-            stack_size: 512 * 1024 * 1024,
-            heap_size: 128 * 1024,
+            stack_size: settings.vm.stack_size,
+            heap_size: settings.vm.heap_size,
         },
         codegen: compile_and_codegen,
     };
@@ -838,15 +842,13 @@ fn main() -> Result<(), Error> {
     } else {
         "127.0.0.1:6379".to_string()
     };
-    info!(redis_host, "found redis host");
+    println!("redis host: {redis_host}");
 
     let prefix = match password.as_deref() {
         None => {
-            info!("no! password!!");
             ""
         }
         Some(password) => {
-            info!("found password!!");
             &format!(":{}@", urlencoding::encode(password))
         }
     };
@@ -884,8 +886,6 @@ fn main() -> Result<(), Error> {
         .opt_value_from_str(["-p", "--port"])?
         .unwrap_or(DEFAULT_PORT);
 
-    info!(port, "start listening");
-
     /*
     let data_dir: PathBuf = args
         .opt_value_from_str(["-d", "--data-dir"])?
@@ -902,6 +902,8 @@ fn main() -> Result<(), Error> {
 
     let _ = args.finish();
 
+    println!("start listening on port: {port}");
+
     let socket = UdpSocket::bind(format!("0.0.0.0:{port}"))?;
 
     socket.set_read_timeout(Some(Duration::from_secs(timeout as u64)))?;
@@ -911,7 +913,13 @@ fn main() -> Result<(), Error> {
 
     let mut source_map = swamp_compile::create_source_map(Path::new("packages"), &scripts_dir)?;
 
-    let vm_result = compile_and_create_vm(&mut source_map, show_assembly)?;
+    let full_yini_path = scripts_dir.join("swampd.yini");
+
+    let yini = read_yini(&full_yini_path);
+
+    debug!("vm stack: {} heap: {}", human_memsize::human_size(yini.vm.stack_size as u64), human_memsize::human_size(yini.vm.heap_size as u64), );
+
+    let vm_result = compile_and_create_vm(&mut source_map, &yini, show_assembly)?;
 
     let crate_main_path = &["crate".to_string(), "main".to_string()];
 
@@ -936,7 +944,6 @@ fn main() -> Result<(), Error> {
 
     let (server_type, server_basic_type) =
         create_script_server(&mut script, wrapper, show_instructions);
-    info!(%server_type, %server_basic_type, "server types");
 
     let tick_fn = do_get_tick(&mut script, &server_type).clone();
 

@@ -71,6 +71,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d71b6127be86fdcfddb610f7182ac57211d4b18a3e9c82eb2d17662f2227ad6a"
 
 [[package]]
+name = "bytesize"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a3c8f83209414aacf0eeae3cf730b18d6981697fba62f200fcfb92b9f082acba"
+
+[[package]]
 name = "cfg-if"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -234,6 +240,12 @@ checksum = "32905730b9b5de9720505016942d44c41b27c4ee68a24457106d15db74bf925f"
 dependencies = [
  "fxhash",
 ]
+
+[[package]]
+name = "human-memsize"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70c0229f4c770b2ec2ef5f4c5888d0f04ec52ba064af18ccc5d9a66cf4bac8e1"
 
 [[package]]
 name = "icu_collections"
@@ -1176,9 +1188,9 @@ dependencies = [
 
 [[package]]
 name = "swamp-yini"
-version = "0.2.24"
+version = "0.2.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e7e2ff7e4d3a2f726fd423e776fea787ab46a2f23429f25533e60350cf51dd6"
+checksum = "0ad8e5b2cb10c669fc778e1525112b89f2384b78e4282fc1e58f230d9d296ae9"
 dependencies = [
  "tracing",
  "yini",
@@ -1186,11 +1198,13 @@ dependencies = [
 
 [[package]]
 name = "swampd"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "bytes",
+ "bytesize",
  "frag-datagram",
  "getrandom 0.3.3",
+ "human-memsize",
  "pico-args",
  "redis",
  "seq-map",
@@ -1206,6 +1220,7 @@ dependencies = [
  "tracing-subscriber",
  "urlencoding",
  "uuid",
+ "yini",
 ]
 
 [[package]]
@@ -1613,9 +1628,9 @@ checksum = "cfe53a6657fd280eaa890a3bc59152892ffa3e30101319d168b781ed6529b049"
 
 [[package]]
 name = "yini"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4cbbfc7c00b80faf1175824f06e817c978536b39eabd179296da37353952d09"
+checksum = "957b79ca80a362860e53234eb0c5c0f0a1e75b2766dd56c0c2528f7cfcafa913"
 dependencies = [
  "seq-map",
 ]

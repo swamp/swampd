@@ -46,7 +46,8 @@ jobs:
         run: choco install zip
 
       - name: Build all workspace binaries
-        run: cargo build --color=always --profile fast --target ${{ matrix.target }}
+        run: cargo fetch --color=always --locked && cargo build --color=always --frozen --profile fast --target ${{ matrix.target }}
+
 
       - name: Package binaries into a single “swampd-<platform>-<arch>” archive
         shell: bash
